@@ -1,0 +1,16 @@
+services:
+  api:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      UPLOADS_DIR: /app/uploads
+      DATA_DIR: /app/data
+    volumes:
+      - ./uploads:/app/uploads
+      - ./data:/app/data
+    restart: unless-stopped
