@@ -8,6 +8,7 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "test": "vitest",
+    "setup": "bash scripts/setup.sh",
     "generate-previews": "tsx src/scripts/generate-previews.ts"
   },
   "dependencies": {

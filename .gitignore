@@ -9,4 +9,5 @@ coverage/
 
 uploads/
 data/
+ecosystem.config.cjs
 .DS_Store
