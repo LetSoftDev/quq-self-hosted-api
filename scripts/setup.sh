@@ -124,6 +124,16 @@ read_env_value() {
   ' "$ENV_FILE"
 }
 
+install_dependencies() {
+  if [[ -f package-lock.json ]]; then
+    note "Installing exact dependencies with npm ci."
+    npm ci
+  else
+    warn "package-lock.json is missing; using npm install instead of npm ci."
+    npm install
+  fi
+}
+
 nginx_size_from_bytes() {
   local bytes="$1"
 
@@ -198,6 +208,177 @@ enable_service_if_available() {
 
 docker_compose_available() {
   command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
+docker_available() {
+  command -v docker >/dev/null 2>&1
+}
+
+print_manual_docker_commands() {
+  local port="${1:-3000}"
+
+  printf '\n'
+  bold "Manual Docker setup"
+  case "$OS_FAMILY" in
+    debian)
+      printf 'Run these commands, then check the API again:\n'
+      printf '  apt update\n'
+      printf '  apt install -y docker.io docker-compose-v2\n'
+      printf '  systemctl enable --now docker\n'
+      printf '  docker compose up -d --build\n'
+      printf '  docker compose ps\n'
+      printf '  curl http://localhost:%s/health\n' "$port"
+      printf '\n'
+      printf 'If docker-compose-v2 is not available on this server, install the legacy package instead:\n'
+      printf '  apt install -y docker.io docker-compose\n'
+      ;;
+    rhel)
+      printf 'Install Docker Engine for your RHEL-compatible distribution, then run:\n'
+      printf '  systemctl enable --now docker\n'
+      printf '  docker compose up -d --build\n'
+      printf '  docker compose ps\n'
+      printf '  curl http://localhost:%s/health\n' "$port"
+      ;;
+    arch)
+      printf 'Run these commands, then check the API again:\n'
+      printf '  pacman -Sy --noconfirm docker docker-compose\n'
+      printf '  systemctl enable --now docker\n'
+      printf '  docker compose up -d --build\n'
+      printf '  docker compose ps\n'
+      printf '  curl http://localhost:%s/health\n' "$port"
+      ;;
+    alpine)
+      printf 'Run these commands, then check the API again:\n'
+      printf '  apk add --no-cache docker docker-cli-compose\n'
+      printf '  service docker start\n'
+      printf '  docker compose up -d --build\n'
+      printf '  docker compose ps\n'
+      printf '  curl http://localhost:%s/health\n' "$port"
+      ;;
+    *)
+      printf 'Install Docker Engine with the Compose plugin for your Linux distribution, then run:\n'
+      printf '  docker --version\n'
+      printf '  docker compose version\n'
+      printf '  docker compose up -d --build\n'
+      printf '  docker compose ps\n'
+      printf '  curl http://localhost:%s/health\n' "$port"
+      ;;
+  esac
+}
+
+print_manual_node_commands() {
+  printf '\n'
+  bold "Manual Node.js setup"
+  case "$OS_FAMILY" in
+    debian)
+      printf 'Run these commands, then rerun this wizard or choose PM2 again:\n'
+      printf '  apt update\n'
+      printf '  apt install -y ca-certificates curl gnupg\n'
+      printf '  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -\n'
+      printf '  apt install -y nodejs\n'
+      printf '  node --version\n'
+      printf '  npm --version\n'
+      ;;
+    arch)
+      printf 'Run these commands, then rerun this wizard or choose PM2 again:\n'
+      printf '  pacman -Sy --needed --noconfirm nodejs npm\n'
+      printf '  node --version\n'
+      printf '  npm --version\n'
+      ;;
+    alpine)
+      printf 'Run these commands, then rerun this wizard or choose PM2 again:\n'
+      printf '  apk add --no-cache nodejs npm\n'
+      printf '  node --version\n'
+      printf '  npm --version\n'
+      ;;
+    *)
+      printf 'Install Node.js 20+ and npm for your Linux distribution, then run:\n'
+      printf '  node --version\n'
+      printf '  npm --version\n'
+      ;;
+  esac
+}
+
+print_manual_pm2_commands() {
+  printf '\n'
+  bold "Manual PM2 setup"
+  printf 'Run these commands after Node.js and npm are available:\n'
+  printf '  npm install -g pm2\n'
+  printf '  npm install\n'
+  printf '  npm run build\n'
+  printf '  pm2 start ecosystem.config.cjs --update-env\n'
+  printf '  pm2 save\n'
+  printf '  npm run health\n'
+}
+
+print_manual_nginx_commands() {
+  local domain="${1:-files.example.com}"
+  local local_port="${2:-3000}"
+  local client_max_body_size="${3:-50m}"
+
+  printf '\n'
+  bold "Manual Nginx setup"
+  case "$OS_FAMILY" in
+    debian)
+      printf 'Run these commands:\n'
+      printf '  apt update\n'
+      printf '  apt install -y nginx\n'
+      printf '  systemctl enable --now nginx\n'
+      ;;
+    arch)
+      printf 'Run these commands:\n'
+      printf '  pacman -Sy --needed --noconfirm nginx\n'
+      printf '  systemctl enable --now nginx\n'
+      ;;
+    alpine)
+      printf 'Run these commands:\n'
+      printf '  apk add --no-cache nginx\n'
+      printf '  service nginx start\n'
+      ;;
+    *)
+      printf 'Install nginx for your Linux distribution and start the service.\n'
+      ;;
+  esac
+  printf 'Then configure a reverse proxy for %s to http://127.0.0.1:%s with client_max_body_size %s.\n' "$domain" "$local_port" "$client_max_body_size"
+  printf 'After configuring nginx, run:\n'
+  printf '  nginx -t\n'
+  printf '  systemctl reload nginx\n'
+}
+
+print_manual_certbot_commands() {
+  local domain="${1:-files.example.com}"
+
+  printf '\n'
+  bold "Manual HTTPS setup"
+  case "$OS_FAMILY" in
+    debian)
+      printf 'Run these commands after DNS points to this server:\n'
+      printf '  apt update\n'
+      printf '  apt install -y certbot python3-certbot-nginx\n'
+      printf '  certbot --nginx -d %s\n' "$domain"
+      ;;
+    *)
+      printf 'Install certbot and the nginx plugin for your Linux distribution, then run:\n'
+      printf '  certbot --nginx -d %s\n' "$domain"
+      ;;
+  esac
+}
+
+print_manual_dns_commands() {
+  local domain="$1"
+  local server_ip="$2"
+
+  printf '\n'
+  bold "Manual DNS setup"
+  if [[ -n "$server_ip" ]]; then
+    printf 'Create or update this DNS record at your domain provider:\n'
+    printf '  Type: A\n'
+    printf '  Name: %s\n' "$domain"
+    printf '  Value: %s\n' "$server_ip"
+  else
+    printf 'Create an A record for %s that points to this server public IPv4 address.\n' "$domain"
+  fi
+  printf 'After DNS propagates, rerun this wizard and choose nginx setup again.\n'
 }
 
 detect_os() {
@@ -368,6 +549,7 @@ install_node() {
 
   if ! yes_no "Install Node.js and npm now?" "y"; then
     manual_install_hint "Node.js" "Install Node.js and npm manually, then rerun this wizard or choose PM2 again."
+    print_manual_node_commands
     return 1
   fi
 
@@ -387,6 +569,7 @@ install_node() {
       ;;
     *)
       manual_install_hint "Node.js" "Install Node.js 20+ and npm using your server package manager."
+      print_manual_node_commands
       return 1
       ;;
   esac
@@ -403,7 +586,10 @@ ensure_node() {
   fi
 
   warn "Node.js or npm is not installed."
-  install_node
+  if ! install_node; then
+    print_manual_node_commands
+    return 1
+  fi
 }
 
 install_docker() {
@@ -451,15 +637,22 @@ ensure_docker() {
     return 0
   fi
 
-  warn "Docker or Docker Compose is not installed."
-  install_docker
+  if docker_available; then
+    warn "Docker is installed, but Docker Compose is not available."
+  else
+    warn "Docker is not installed."
+  fi
+
+  if ! install_docker; then
+    return 1
+  fi
 
   if docker_compose_available; then
     note "Docker Compose is ready."
     return 0
   fi
 
-  manual_install_hint "Docker Compose" "Make sure docker compose version works, then run: docker compose up -d --build"
+  manual_install_hint "Docker Compose" "Make sure both docker --version and docker compose version work, then run: docker compose up -d --build"
   return 1
 }
 
@@ -496,6 +689,10 @@ resolve_domain_ips() {
 }
 
 ensure_nginx() {
+  local domain="${1:-files.example.com}"
+  local local_port="${2:-3000}"
+  local client_max_body_size="${3:-50m}"
+
   section "Nginx check"
   info "Nginx exposes the API on your public domain and forwards traffic to the local Node server."
   info "The wizard checks Nginx only because you selected Nginx setup."
@@ -507,15 +704,23 @@ ensure_nginx() {
 
   warn "Nginx is not installed."
   if yes_no "Install Nginx now?" "y"; then
-    install_package_group nginx
-    enable_service_if_available nginx
+    if install_package_group nginx; then
+      enable_service_if_available nginx
+    else
+      warn "Nginx automatic installation failed."
+      print_manual_nginx_commands "$domain" "$local_port" "$client_max_body_size"
+      return 1
+    fi
   else
     manual_install_hint "Nginx" "Install nginx manually before configuring the reverse proxy, then rerun this wizard."
+    print_manual_nginx_commands "$domain" "$local_port" "$client_max_body_size"
     return 1
   fi
 }
 
 ensure_certbot() {
+  local domain="${1:-files.example.com}"
+
   section "Certbot check"
   info "Certbot is used only when you ask the wizard to issue a Let's Encrypt HTTPS certificate."
   info "Without it, Nginx can still run HTTP and you can configure TLS manually later."
@@ -527,9 +732,14 @@ ensure_certbot() {
 
   warn "Certbot is not installed."
   if yes_no "Install Certbot now?" "y"; then
-    install_package_group certbot
+    if ! install_package_group certbot; then
+      warn "Certbot automatic installation failed."
+      print_manual_certbot_commands "$domain"
+      return 1
+    fi
   else
     manual_install_hint "Certbot" "Install certbot and python3-certbot-nginx manually before issuing a Let's Encrypt certificate."
+    print_manual_certbot_commands "$domain"
     return 1
   fi
 }
@@ -628,26 +838,37 @@ configure_nginx() {
       printf 'Create an A record that points %s to this server public IP.\n' "$domain"
     fi
     printf 'After DNS propagates, rerun this wizard before issuing a certificate.\n'
+    print_manual_dns_commands "$domain" "$server_ip"
 
     if ! yes_no "Continue with HTTP-only nginx config anyway?" "n"; then
       return
     fi
   fi
 
-  ensure_nginx || return
-  write_nginx_config "$domain" "$local_port" "$client_max_body_size" || return
+  ensure_nginx "$domain" "$local_port" "$client_max_body_size" || return
+  if ! write_nginx_config "$domain" "$local_port" "$client_max_body_size"; then
+    print_manual_nginx_commands "$domain" "$local_port" "$client_max_body_size"
+    return
+  fi
 
   if yes_no "Issue Let's Encrypt HTTPS certificate now?" "y"; then
     if ! domain_points_to_server "$domain" "$server_ip" "$domain_ips"; then
       printf 'Skipping certificate because DNS is not confirmed for this server.\n'
       printf 'Fix DNS, then run: certbot --nginx -d %s\n' "$domain"
+      print_manual_dns_commands "$domain" "$server_ip"
+      print_manual_certbot_commands "$domain"
       return
     fi
 
-    ensure_certbot || return
-    sudo_cmd certbot --nginx -d "$domain"
+    ensure_certbot "$domain" || return
+    if ! sudo_cmd certbot --nginx -d "$domain"; then
+      warn "Certbot failed to issue a certificate."
+      print_manual_certbot_commands "$domain"
+      return
+    fi
   else
     note "Issue HTTPS later with: certbot --nginx -d $domain"
+    print_manual_certbot_commands "$domain"
   fi
 }
 
@@ -664,13 +885,20 @@ ensure_pm2() {
   warn "PM2 is not installed."
   if yes_no "Install PM2 globally now?" "y"; then
     if command -v npm >/dev/null 2>&1; then
-      npm install -g pm2
+      if ! npm install -g pm2; then
+        warn "PM2 automatic installation failed."
+        print_manual_pm2_commands
+        return 1
+      fi
     else
       manual_install_hint "PM2" "npm is required. Install Node.js/npm first, then run: npm install -g pm2"
+      print_manual_node_commands
+      print_manual_pm2_commands
       return 1
     fi
   else
     manual_install_hint "PM2" "Install PM2 manually before starting the app: npm install -g pm2"
+    print_manual_pm2_commands
     return 1
   fi
 }
@@ -711,69 +939,107 @@ main() {
   printf '2) PM2 process manager\n'
   printf '3) Skip for now\n'
 
-  local runtime
+  local runtime runtime_status runtime_label
+  runtime_status="not-started"
+  runtime_label="No runtime"
   runtime="$(prompt "Select option" "1")"
 
   case "$runtime" in
     1)
+      runtime_label="Docker Compose"
       if ensure_docker; then
         note "Docker Compose is already configured with restart: unless-stopped."
         if yes_no "Build and start Docker Compose now?" "y"; then
-          docker compose up -d --build
+          if docker compose up -d --build; then
+            runtime_status="started"
+            note "Docker Compose started."
+            docker compose ps
+          else
+            runtime_status="failed"
+            warn "Docker Compose failed to start the API."
+            note "Inspect the error above, then run: docker compose up -d --build"
+          fi
 
-          if yes_no "Follow Docker logs now?" "n"; then
+          if [[ "$runtime_status" == "started" ]] && yes_no "Follow Docker logs now?" "n"; then
             docker compose logs -f api
           else
             note "Follow logs later with: docker compose logs -f api"
           fi
         else
+          runtime_status="deferred"
           note "Start later with: docker compose up -d --build"
           note "Follow logs later with: docker compose logs -f api"
         fi
       else
+        runtime_status="missing-dependency"
         note "Docker runtime was not started."
-        note "Start later after Docker is ready: docker compose up -d --build"
+        note "Install Docker and Docker Compose manually, then start the API."
+        print_manual_docker_commands "$port"
         note "Follow logs later with: docker compose logs -f api"
       fi
       ;;
     2)
       local app_name
+      runtime_label="PM2"
       if ensure_node; then
         app_name="$(prompt "PM2 app name" "quq-self-hosted-api")"
         ensure_pm2 || true
         write_pm2_ecosystem "$app_name"
 
         if command -v pm2 >/dev/null 2>&1 && yes_no "Install dependencies, build, and start with PM2 now?" "y"; then
-          npm install
-          npm run build
-          pm2 start ecosystem.config.cjs --update-env
-
-          if yes_no "Configure PM2 startup on boot now?" "y"; then
-            pm2 startup
-            printf '\n'
-            printf 'Run the command printed by PM2 above if it asks for sudo access, then run:\n'
-            printf 'pm2 save\n'
+          if ! install_dependencies; then
+            runtime_status="failed"
+            warn "Dependency installation failed."
+            print_manual_pm2_commands
+          elif ! npm run build; then
+            runtime_status="failed"
+            warn "Build failed."
+            print_manual_pm2_commands
+          elif pm2 start ecosystem.config.cjs --update-env; then
+            runtime_status="started"
           else
-            note "Skipped PM2 startup setup."
+            runtime_status="failed"
+            warn "PM2 failed to start the API."
+            print_manual_pm2_commands
           fi
 
-          if yes_no "Save current PM2 process list now?" "y"; then
+          if [[ "$runtime_status" == "started" ]]; then
+            if yes_no "Configure PM2 startup on boot now?" "y"; then
+              pm2 startup
+              printf '\n'
+              printf 'Run the command printed by PM2 above if it asks for sudo access, then run:\n'
+              printf 'pm2 save\n'
+            else
+              note "Skipped PM2 startup setup."
+            fi
+          fi
+
+          if [[ "$runtime_status" == "started" ]] && yes_no "Save current PM2 process list now?" "y"; then
             pm2 save
           fi
         else
+          runtime_status="deferred"
           note "Install and build later with: npm install && npm run build"
           note "Start later with: pm2 start ecosystem.config.cjs --update-env"
           note "Persist later with: pm2 startup && pm2 save"
+          print_manual_pm2_commands
         fi
       else
+        runtime_status="missing-dependency"
         note "PM2 runtime cannot continue until Node.js and npm are available."
         note "Install Node.js/npm manually, then rerun this wizard or run npm install && npm run build later."
+        print_manual_node_commands
+        print_manual_pm2_commands
       fi
       ;;
     3)
+      runtime_label="Skipped"
+      runtime_status="deferred"
       note "Skipped process manager setup."
       ;;
     *)
+      runtime_label="Unknown"
+      runtime_status="deferred"
       note "Unknown option. Skipped process manager setup."
       ;;
   esac
@@ -782,12 +1048,35 @@ main() {
 
   printf '\n'
   bold "Next steps"
-  printf '1. Start the API:\n'
-  printf '   - Docker: choose "Docker Compose restart policy" in this wizard, or run docker compose up -d --build later.\n'
-  printf '   - PM2: choose "PM2 process manager" in this wizard, or run npm install && npm run build && pm2 start ecosystem.config.cjs --update-env later.\n'
-  printf '2. Check health: curl http://localhost:%s/health\n' "$port"
-  printf '3. Optional nginx setup can expose the API at: https://your-domain.example/api\n'
-  printf '4. Point frontend integrations to the public /api URL.\n'
+  printf 'Runtime selected: %s\n' "$runtime_label"
+  case "$runtime_status" in
+    started)
+      printf '- The API runtime was started by this wizard.\n'
+      printf '- Check health: npm run health\n'
+      printf '  Or manually: curl http://localhost:%s/health\n' "$port"
+      ;;
+    deferred)
+      printf '- The API was not started yet.\n'
+      printf '  Docker: run docker compose up -d --build\n'
+      printf '  PM2: run npm install && npm run build && pm2 start ecosystem.config.cjs --update-env\n'
+      printf '- After starting it, check health: npm run health\n'
+      ;;
+    missing-dependency)
+      printf '- The API was not started because a required runtime dependency is missing.\n'
+      printf '  Docker mode requires: docker --version and docker compose version\n'
+      printf '  PM2 mode requires: node --version, npm --version, and pm2 --version\n'
+      printf '- Install the missing tool using the manual setup printed above, then rerun this wizard or start manually.\n'
+      ;;
+    failed)
+      printf '- The selected runtime attempted to start but failed.\n'
+      printf '- Inspect logs/errors:\n'
+      printf '  Docker: docker compose logs -f api\n'
+      printf '  PM2: pm2 logs quq-self-hosted-api\n'
+      printf '- Retry health after fixing the runtime: npm run health\n'
+      ;;
+  esac
+  printf '- Optional nginx setup can expose the API at: https://your-domain.example\n'
+  printf '- Point frontend integrations to the public /api URL.\n'
 }
 
 main "$@"

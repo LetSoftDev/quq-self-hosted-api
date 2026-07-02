@@ -6,9 +6,14 @@ Self-hosted file API for QuqManager. It stores files locally and validates proje
 
 - Linux server only. Windows Server is not supported.
 - Recommended server OS: Ubuntu or Debian.
+- Minimum for a small test server: 1 vCPU and 1 GB RAM.
+- Recommended for production or Docker builds: 2 vCPU and 2 GB RAM or more.
+- Disk size depends on uploaded files. Start with at least 20 GB SSD and grow `UPLOADS_DIR` storage as needed.
 - Node.js 20+ and npm when running with PM2.
 - Docker with Docker Compose when running containers.
 - Nginx and Certbot only when exposing the API through HTTPS on your domain.
+
+Docker image builds install native dependencies and can be slow on very small servers. If you use a 1 vCPU / 1 GB instance, expect the first build to take longer; 2 GB RAM or swap is strongly recommended.
 
 The setup wizard detects the Linux distribution and checks these tools only at the step where they are needed. Automatic installation is supported for common Linux families: Debian/Ubuntu, RHEL-compatible distributions, Arch-based distributions, and Alpine where packages are available. Unknown Linux distributions fall back to manual instructions.
 
