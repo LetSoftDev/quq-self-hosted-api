@@ -1,6 +1,6 @@
 # QuqManager Self-Hosted API
 
-Self-hosted file API for QuqManager. It stores files locally and validates project API keys through the QuqManager backend.
+Self-hosted file API for QuqManager. It stores files locally and validates project API keys through the QuqManager platform API at `https://qapi.letsoft.co`.
 
 ## Requirements
 
@@ -22,6 +22,8 @@ chmod +x scripts/setup.sh
 The API starts on `http://localhost:3000` by default.
 
 The setup wizard asks for the public runtime values, creates storage folders automatically, and lets you choose how the API should stay alive. `DATA_DIR` is always written as `./data`; you do not need to enter it manually. When the wizard asks for `VALIDATION_SECRET`, copy it from the QuqManager dashboard: `Projects -> select project -> Settings -> Validation Secret`.
+
+The platform validation URL is built into the self-hosted API. You only configure your project `VALIDATION_SECRET`; there is no backend-pro URL environment variable.
 
 The wizard writes the runtime configuration for you. If your deployment needs it, you can also set the same values manually instead of using the wizard: port, uploads directory, max file size, node environment, and Validation Secret.
 

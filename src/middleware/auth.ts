@@ -7,7 +7,7 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
-const VALIDATION_API_URL = 'http://host.docker.internal:3001'
+const VALIDATION_API_URL = 'https://qapi.letsoft.co'
 
 /** Exposed for test teardown only — do not use in production code */
 export function clearAuthCache(): void {

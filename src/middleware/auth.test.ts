@@ -42,7 +42,7 @@ describe('authMiddleware — hardcoded backend-pro URL', () => {
     expect(res.status).not.toHaveBeenCalled()
   })
 
-  it('uses the hardcoded local Docker host URL', async () => {
+  it('uses the hardcoded QuqManager platform API URL', async () => {
     process.env.VALIDATION_SECRET = 'test-secret'
     vi.mocked(fetch).mockResolvedValue({
       status: 200,
@@ -54,7 +54,7 @@ describe('authMiddleware — hardcoded backend-pro URL', () => {
     const next = vi.fn()
     await authMiddleware(req, res, next)
     expect(fetch).toHaveBeenCalledWith(
-      'http://host.docker.internal:3001/validation/verify',
+      'https://qapi.letsoft.co/validation/verify',
       expect.any(Object),
     )
     expect(next).toHaveBeenCalled()
@@ -75,7 +75,7 @@ describe('authMiddleware — hardcoded backend-pro URL', () => {
 // Online mode
 // ──────────────────────────────────────────────────────────
 describe('authMiddleware — online mode', () => {
-  const VALIDATION_API_URL = 'http://host.docker.internal:3001'
+  const VALIDATION_API_URL = 'https://qapi.letsoft.co'
   const SECRET = 'test-secret'
 
   beforeEach(() => {
