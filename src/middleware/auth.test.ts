@@ -21,12 +21,16 @@ function makeRes() {
 }
 
 // ──────────────────────────────────────────────────────────
-// BACKEND_PRO_URL not set
+// Hardcoded backend-pro URL
 // ──────────────────────────────────────────────────────────
-describe('authMiddleware — BACKEND_PRO_URL not set', () => {
+describe('authMiddleware — hardcoded backend-pro URL', () => {
   beforeEach(() => {
-    delete process.env.BACKEND_PRO_URL
     delete process.env.VALIDATION_SECRET
+    vi.stubGlobal('fetch', vi.fn())
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
   })
 
   it('skips auth for /health', () => {
@@ -38,42 +42,49 @@ describe('authMiddleware — BACKEND_PRO_URL not set', () => {
     expect(res.status).not.toHaveBeenCalled()
   })
 
-  it('returns 503 for all non-health requests', () => {
+  it('uses the hardcoded local Docker host URL', async () => {
+    process.env.VALIDATION_SECRET = 'test-secret'
+    vi.mocked(fetch).mockResolvedValue({
+      status: 200,
+      json: async () => ({ valid: true }),
+    } as any)
+
     const req = makeReq({ headers: { 'x-api-key': 'qk_abc' } })
     const res = makeRes()
     const next = vi.fn()
-    authMiddleware(req, res, next)
-    expect(res.status).toHaveBeenCalledWith(503)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Validation service unavailable' })
-    expect(next).not.toHaveBeenCalled()
+    await authMiddleware(req, res, next)
+    expect(fetch).toHaveBeenCalledWith(
+      'http://host.docker.internal:3001/validation/verify',
+      expect.any(Object),
+    )
+    expect(next).toHaveBeenCalled()
   })
 
-  it('returns 503 even without x-api-key', () => {
+  it('returns 401 without x-api-key before calling validation', async () => {
     const req = makeReq({ headers: {} })
     const res = makeRes()
     const next = vi.fn()
-    authMiddleware(req, res, next)
-    expect(res.status).toHaveBeenCalledWith(503)
-    expect(res.json).toHaveBeenCalledWith({ error: 'Validation service unavailable' })
+    await authMiddleware(req, res, next)
+    expect(res.status).toHaveBeenCalledWith(401)
+    expect(res.json).toHaveBeenCalledWith({ error: 'API key required' })
+    expect(fetch).not.toHaveBeenCalled()
   })
 })
 
 // ──────────────────────────────────────────────────────────
-// Online mode (BACKEND_PRO_URL is set)
+// Online mode
 // ──────────────────────────────────────────────────────────
-describe('authMiddleware — online mode (BACKEND_PRO_URL set)', () => {
-  const BACKEND_PRO_URL = 'http://backend-pro:3001'
+describe('authMiddleware — online mode', () => {
+  const VALIDATION_API_URL = 'http://host.docker.internal:3001'
   const SECRET = 'test-secret'
 
   beforeEach(() => {
-    process.env.BACKEND_PRO_URL = BACKEND_PRO_URL
     process.env.VALIDATION_SECRET = SECRET
     vi.stubGlobal('fetch', vi.fn())
   })
 
   afterEach(() => {
     vi.unstubAllGlobals()
-    delete process.env.BACKEND_PRO_URL
     delete process.env.VALIDATION_SECRET
   })
 
@@ -121,7 +132,7 @@ describe('authMiddleware — online mode (BACKEND_PRO_URL set)', () => {
     await authMiddleware(req, res, next)
 
     expect(fetch).toHaveBeenCalledWith(
-      `${BACKEND_PRO_URL}/validation/verify`,
+      `${VALIDATION_API_URL}/validation/verify`,
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({

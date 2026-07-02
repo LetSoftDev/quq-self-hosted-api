@@ -7,6 +7,7 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 60 * 60 * 1000 // 1 hour
+const VALIDATION_API_URL = 'http://host.docker.internal:3001'
 
 /** Exposed for test teardown only — do not use in production code */
 export function clearAuthCache(): void {
@@ -23,21 +24,13 @@ export function authMiddleware(
     return
   }
 
-  const backendProUrl = process.env.BACKEND_PRO_URL
-  if (!backendProUrl) {
-    console.warn('[auth] BACKEND_PRO_URL is not set; rejecting all requests')
-    res.status(503).json({ error: 'Validation service unavailable' })
-    return
-  }
-
-  return onlineAuth(req, res, next, backendProUrl)
+  return onlineAuth(req, res, next)
 }
 
 async function onlineAuth(
   req: Request,
   res: Response,
   next: NextFunction,
-  backendProUrl: string,
 ): Promise<void> {
   const rawApiKey = req.headers['x-api-key']
   const apiKey = Array.isArray(rawApiKey) ? rawApiKey[0] : rawApiKey
@@ -66,7 +59,7 @@ async function onlineAuth(
   const timeoutId = setTimeout(() => controller.abort(), 5000)
 
   try {
-    const fetchResponse = await fetch(`${backendProUrl}/validation/verify`, {
+    const fetchResponse = await fetch(`${VALIDATION_API_URL}/validation/verify`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

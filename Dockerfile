@@ -3,15 +3,14 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 RUN apk add --no-cache python3 make g++
-RUN corepack enable && corepack prepare pnpm@10.32.1 --activate
 
-COPY package.json pnpm-lock.yaml ./
-RUN pnpm install --frozen-lockfile
+COPY package.json package-lock.json ./
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src ./src
-RUN pnpm build
-RUN pnpm prune --prod
+RUN npm run build
+RUN npm prune --omit=dev
 
 FROM node:20-alpine
 
