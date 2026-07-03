@@ -23,24 +23,51 @@ export const resetActivityStore = () => {
 
 router.use(authMiddleware)
 
-const fileExists = async (file: QuqFile): Promise<boolean> => {
+const getMimeType = (filename: string): string | undefined => {
+  const ext = path.extname(filename).toLowerCase()
+  const mimeMap: Record<string, string> = {
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.gif': 'image/gif',
+    '.webp': 'image/webp',
+    '.svg': 'image/svg+xml',
+    '.pdf': 'application/pdf',
+    '.mp4': 'video/mp4',
+    '.mov': 'video/quicktime',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+  }
+  return mimeMap[ext]
+}
+
+const enrichExistingFile = async (file: QuqFile): Promise<QuqFile | null> => {
   try {
     await fs.access(getStorage().resolvePublic(file.path))
-    return true
   } catch {
-    return false
+    return null
   }
+
+  const enriched: QuqFile = {
+    ...file,
+    mime: file.type === 'file' ? getMimeType(file.name) : file.mime,
+  }
+
+  if (file.type === 'file') {
+    try {
+      await fs.access(getStorage().getPreviewPath(file.path))
+      enriched.preview = `/api/preview?path=${encodeURIComponent(file.path)}`
+    } catch {
+      // No preview exists — keep the activity item without a thumbnail.
+    }
+  }
+
+  return enriched
 }
 
 const filterExistingFiles = async (files: QuqFile[]): Promise<QuqFile[]> => {
-  const checks = await Promise.all(
-    files.map(async file => ({
-      file,
-      exists: await fileExists(file)
-    }))
-  )
-
-  return checks.filter(({ exists }) => exists).map(({ file }) => file)
+  const enriched = await Promise.all(files.map(enrichExistingFile))
+  return enriched.filter((file): file is QuqFile => file !== null)
 }
 
 const filterExistingSummary = async (summary: ActivitySummary): Promise<ActivitySummary> => ({

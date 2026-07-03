@@ -110,6 +110,33 @@ describe.sequential('Activity Router', () => {
       expect(res.body.recentFiles.map((f: any) => f.name)).toContain('report.pdf')
     })
 
+    it('adds mime and preview metadata for recorded image files', async () => {
+      await fs.mkdir(path.join(TEST_UPLOADS_DIR, 'images'), { recursive: true })
+      await fs.mkdir(path.join(TEST_UPLOADS_DIR, '.previews', 'images'), { recursive: true })
+      await fs.writeFile(path.join(TEST_UPLOADS_DIR, 'images', 'photo.png'), 'image')
+      await fs.writeFile(path.join(TEST_UPLOADS_DIR, '.previews', 'images', 'photo.png'), 'preview')
+
+      await request(app)
+        .post('/api/activity')
+        .set('x-api-key', 'test-key')
+        .send({ path: '/images/photo.png', name: 'photo.png', type: 'file' })
+
+      const res = await request(app)
+        .get('/api/activity/summary')
+        .set('x-api-key', 'test-key')
+
+      expect(res.body.quickAccess[0]).toMatchObject({
+        name: 'photo.png',
+        mime: 'image/png',
+        preview: '/api/preview?path=%2Fimages%2Fphoto.png',
+      })
+      expect(res.body.recentFiles[0]).toMatchObject({
+        name: 'photo.png',
+        mime: 'image/png',
+        preview: '/api/preview?path=%2Fimages%2Fphoto.png',
+      })
+    })
+
     it('filters out recorded files that no longer exist in uploads', async () => {
       await fs.writeFile(path.join(TEST_UPLOADS_DIR, 'existing.pdf'), 'test pdf')
 
