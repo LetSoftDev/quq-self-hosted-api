@@ -177,7 +177,7 @@ export class LocalStorage {
     await fs.mkdir(targetDir, { recursive: true })
 
     const targetFile = path.join(targetDir, file.originalname)
-    await fs.rename(file.path, targetFile)
+    await this.moveUploadedFile(file.path, targetFile)
 
     const stats = await fs.stat(targetFile)
     const relativePath = path.join(targetPath, file.originalname)
@@ -190,6 +190,17 @@ export class LocalStorage {
       size: stats.size,
       modified: stats.mtimeMs,
       mime: file.mimetype
+    }
+  }
+
+  private async moveUploadedFile(sourcePath: string, targetPath: string): Promise<void> {
+    try {
+      await fs.rename(sourcePath, targetPath)
+    } catch (err: any) {
+      if (err?.code !== 'EXDEV') throw err
+
+      await fs.copyFile(sourcePath, targetPath)
+      await fs.unlink(sourcePath)
     }
   }
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { LocalStorage } from './local'
 import type { QuqFile } from '../types'
 import fs from 'fs/promises'
@@ -115,6 +115,37 @@ describe('LocalStorage', () => {
       const names = result.files.map((f: QuqFile) => f.name)
       expect(names).not.toContain('.trash')
       expect(names).toContain('visible.txt')
+    })
+  })
+
+  describe('upload', () => {
+    it('copies and removes the temp file when rename crosses devices', async () => {
+      const tempDir = path.join(process.cwd(), 'temp', 'test-storage-temp')
+      await fs.mkdir(tempDir, { recursive: true })
+      const tempFile = path.join(tempDir, 'upload.tmp')
+      await fs.writeFile(tempFile, 'uploaded content')
+
+      const renameSpy = vi.spyOn(fs, 'rename').mockRejectedValueOnce(
+        Object.assign(new Error('cross-device link not permitted'), { code: 'EXDEV' })
+      )
+
+      const result = await storage.upload({
+        path: tempFile,
+        originalname: 'photo.jpg',
+        mimetype: 'image/jpeg',
+      } as Express.Multer.File, '/')
+
+      expect(result).toMatchObject({
+        name: 'photo.jpg',
+        path: '/photo.jpg',
+        url: '/files/photo.jpg',
+        mime: 'image/jpeg',
+      })
+      await expect(fs.readFile(path.join(TEST_DIR, 'photo.jpg'), 'utf8')).resolves.toBe('uploaded content')
+      await expect(fs.access(tempFile)).rejects.toThrow()
+
+      renameSpy.mockRestore()
+      await fs.rm(tempDir, { recursive: true, force: true })
     })
   })
 
