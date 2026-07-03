@@ -25,8 +25,11 @@ app.use('/api', starsRouter)
 app.use('/api', trashRouter)
 app.use('/api', storageRouter)
 
-// Static file serving with CORS
+// Static file serving with CORS.
+// /files is the current QuqManager public file URL prefix.
+// /uploads is kept as a legacy alias for projects migrated from the old file manager.
 app.use('/files', staticCorsHeaders, express.static(UPLOADS_DIR))
+app.use('/uploads', staticCorsHeaders, express.static(UPLOADS_DIR))
 
 // Health check
 app.get('/health', (req, res) => {
