@@ -65,9 +65,11 @@ The setup wizard can configure nginx after the runtime step:
 
 Choose `yes` at `Configure nginx reverse proxy now?`. The wizard explains the reverse proxy step, checks nginx, can install and start nginx on supported Linux distributions, asks for the public domain, reads the local API port and upload limit from the runtime values, checks whether the domain A record points to the current server, writes an nginx reverse proxy config, and can issue a Let's Encrypt certificate with certbot. Certbot is checked only if you choose HTTPS.
 
+The generated nginx config is prepared for large file uploads: it aligns `client_max_body_size` with `MAX_FILE_SIZE`, disables request buffering for uploads, and sets longer proxy/body timeouts so videos do not fail while the browser is still sending the request.
+
 If DNS is not linked yet, create an A record from your domain to the server public IP, wait for propagation, then rerun the wizard before issuing the certificate.
 
-You can also skip the wizard and configure nginx or another reverse proxy manually. In that case, proxy the public domain to the local API port, keep upload limits aligned with `MAX_FILE_SIZE`, and issue the HTTPS certificate through your normal deployment process.
+You can also skip the wizard and configure nginx or another reverse proxy manually. In that case, proxy the public domain to the local API port, keep upload limits aligned with `MAX_FILE_SIZE`, set upload-friendly proxy/body timeouts, and issue the HTTPS certificate through your normal deployment process.
 
 ## Verify the server
 

@@ -100,6 +100,7 @@ PORT=$port
 UPLOADS_DIR=$uploads_dir
 DATA_DIR=$data_dir
 MAX_FILE_SIZE=$max_file_size
+REQUEST_TIMEOUT_MS=600000
 NODE_ENV=$node_env
 VALIDATION_SECRET=$validation_secret
 EOF
@@ -760,10 +761,15 @@ server {
   server_name $domain;
 
   client_max_body_size $client_max_body_size;
+  client_body_timeout 600s;
 
   location / {
     proxy_pass http://127.0.0.1:$local_port;
     proxy_http_version 1.1;
+    proxy_request_buffering off;
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 600s;
+    proxy_read_timeout 600s;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;

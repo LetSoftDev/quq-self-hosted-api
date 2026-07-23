@@ -13,6 +13,7 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT || 3000
 const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads'
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '600000')
 
 // Middleware
 app.use(cors(corsOptions))
@@ -37,7 +38,10 @@ app.get('/health', (req, res) => {
 })
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Backend running on http://localhost:${PORT}`)
   console.log(`Storage directory: ${UPLOADS_DIR}`)
 })
+
+server.requestTimeout = REQUEST_TIMEOUT_MS
+server.headersTimeout = REQUEST_TIMEOUT_MS + 5000
