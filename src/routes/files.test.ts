@@ -1,10 +1,22 @@
-import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
 import { filesRouter, resetStorage } from './files'
 import { resetStarStore, getStarStore } from './stars'
 import fs from 'fs/promises'
 import path from 'path'
+
+vi.mock('../storage/image-optimization', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../storage/image-optimization')>()
+  return {
+    ...actual,
+    optimizeImageForBrowser: vi.fn().mockResolvedValue({
+      optimized: false,
+      originalSize: 100,
+      outputSize: 100,
+    }),
+  }
+})
 
 const TEST_DIR = path.join(process.cwd(), 'temp', 'test-uploads')
 const TEST_DATA_DIR = path.join(process.cwd(), 'temp', 'test-uploads-data')
@@ -426,6 +438,70 @@ describe.sequential('Files Router', () => {
       expect(res.body.preview).toBeUndefined()
       const previewPath = path.join(TEST_DIR, '.previews', 'photo.png')
       await expect(fs.access(previewPath)).rejects.toThrow()
+    })
+
+    it('does not optimize image uploads on free projects', async () => {
+      const { optimizeImageForBrowser } = await import('../storage/image-optimization')
+      vi.mocked(optimizeImageForBrowser).mockClear()
+      ;(fetch as any).mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({
+          valid: true,
+          plan: 'free',
+          settings: {
+            createImagePreviews: true,
+            optimizeImages: true,
+            canOptimizeImages: false,
+            effectiveOptimizeImages: false,
+          },
+        }),
+      })
+
+      const sharp = (await import('sharp')).default
+      const pngBuffer = await sharp({
+        create: { width: 10, height: 10, channels: 3, background: { r: 100, g: 100, b: 100 } }
+      }).png().toBuffer()
+
+      const res = await request(app)
+        .post('/api/upload')
+        .set('x-api-key', 'free-optimization-key')
+        .field('path', '/')
+        .attach('file', pngBuffer, { filename: 'free.png', contentType: 'image/png' })
+
+      expect(res.status).toBe(200)
+      expect(optimizeImageForBrowser).not.toHaveBeenCalled()
+    })
+
+    it('optimizes image uploads on custom projects when preference is enabled', async () => {
+      const { optimizeImageForBrowser } = await import('../storage/image-optimization')
+      vi.mocked(optimizeImageForBrowser).mockClear()
+      ;(fetch as any).mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({
+          valid: true,
+          plan: 'custom',
+          settings: {
+            createImagePreviews: true,
+            optimizeImages: true,
+            canOptimizeImages: true,
+            effectiveOptimizeImages: true,
+          },
+        }),
+      })
+
+      const sharp = (await import('sharp')).default
+      const pngBuffer = await sharp({
+        create: { width: 10, height: 10, channels: 3, background: { r: 100, g: 100, b: 100 } }
+      }).png().toBuffer()
+
+      const res = await request(app)
+        .post('/api/upload')
+        .set('x-api-key', 'custom-optimization-key')
+        .field('path', '/')
+        .attach('file', pngBuffer, { filename: 'custom.png', contentType: 'image/png' })
+
+      expect(res.status).toBe(200)
+      expect(optimizeImageForBrowser).toHaveBeenCalled()
     })
   })
 })

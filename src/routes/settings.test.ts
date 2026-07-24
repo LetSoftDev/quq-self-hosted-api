@@ -42,8 +42,11 @@ describe('Settings Router', () => {
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({
+      canOptimizeImages: false,
       createImagePreviews: false,
+      effectiveOptimizeImages: false,
       optimizeImages: true,
+      plan: 'free',
     })
     expect(fetch).toHaveBeenLastCalledWith(
       'https://qapi.letsoft.co/validation/project-settings?apiKey=qk_test',
@@ -74,8 +77,11 @@ describe('Settings Router', () => {
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({
+      canOptimizeImages: false,
       createImagePreviews: false,
+      effectiveOptimizeImages: false,
       optimizeImages: false,
+      plan: 'free',
     })
     expect(fetch).toHaveBeenLastCalledWith(
       'https://qapi.letsoft.co/validation/project-settings',

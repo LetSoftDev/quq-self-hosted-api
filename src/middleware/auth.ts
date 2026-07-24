@@ -99,13 +99,17 @@ async function onlineAuth(
       return
     }
 
-    const data = await fetchResponse.json() as { valid: boolean; settings?: Partial<ProjectImageSettings> }
+    const data = await fetchResponse.json() as {
+      valid: boolean
+      plan?: string
+      settings?: Partial<ProjectImageSettings>
+    }
     if (!data.valid) {
       res.status(401).json({ error: 'Invalid API key' })
       return
     }
 
-    const settings = normalizeProjectImageSettings(data.settings)
+    const settings = normalizeProjectImageSettings({ ...data.settings, plan: data.plan })
     cache.set(cacheKey, {
       apiKey,
       origin,

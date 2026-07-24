@@ -84,7 +84,7 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     const storage = getStorage()
     const uploadedFilePath = path.join(storage.resolvePublic(targetPath), req.file.originalname)
 
-    if (settings.optimizeImages && OPTIMIZABLE_IMAGE_MIME_TYPES.has(req.file.mimetype)) {
+    if (settings.effectiveOptimizeImages && OPTIMIZABLE_IMAGE_MIME_TYPES.has(req.file.mimetype)) {
       try {
         const result = await optimizeImageForBrowser(uploadedFilePath, req.file.mimetype)
         if (result.optimized) {

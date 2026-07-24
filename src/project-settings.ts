@@ -3,6 +3,9 @@ import type { Request } from 'express'
 export interface ProjectImageSettings {
   createImagePreviews: boolean
   optimizeImages: boolean
+  plan?: 'free' | 'pro' | 'custom' | string
+  canOptimizeImages: boolean
+  effectiveOptimizeImages: boolean
 }
 
 export interface ProjectAuthContext {
@@ -14,12 +17,21 @@ export interface ProjectAuthContext {
 export const DEFAULT_PROJECT_IMAGE_SETTINGS: ProjectImageSettings = {
   createImagePreviews: true,
   optimizeImages: true,
+  plan: 'free',
+  canOptimizeImages: false,
+  effectiveOptimizeImages: false,
 }
 
 export function normalizeProjectImageSettings(value: Partial<ProjectImageSettings> | undefined): ProjectImageSettings {
+  const plan = value?.plan ?? DEFAULT_PROJECT_IMAGE_SETTINGS.plan
+  const canOptimizeImages = value?.canOptimizeImages ?? (plan === 'pro' || plan === 'custom')
+  const optimizeImages = value?.optimizeImages ?? DEFAULT_PROJECT_IMAGE_SETTINGS.optimizeImages
   return {
     createImagePreviews: value?.createImagePreviews ?? DEFAULT_PROJECT_IMAGE_SETTINGS.createImagePreviews,
-    optimizeImages: value?.optimizeImages ?? DEFAULT_PROJECT_IMAGE_SETTINGS.optimizeImages,
+    optimizeImages,
+    plan,
+    canOptimizeImages,
+    effectiveOptimizeImages: value?.effectiveOptimizeImages ?? (optimizeImages && canOptimizeImages),
   }
 }
 
