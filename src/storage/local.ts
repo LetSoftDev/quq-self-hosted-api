@@ -252,6 +252,7 @@ export class LocalStorage {
     const finalName = await this.resolveConflictName(destDir, filename)
     const absDest = path.join(destDir, finalName)
     await fs.rename(absOld, absDest)
+    await this.movePreview(absOld, absDest)
   }
 
   /**
@@ -268,6 +269,53 @@ export class LocalStorage {
       await fs.cp(absSrc, absDest, { recursive: true })
     } else {
       await fs.copyFile(absSrc, absDest)
+    }
+    await this.copyPreview(absSrc, absDest)
+  }
+
+  private getPreviewPathForResolvedStoragePath(absStoragePath: string): string {
+    const realBaseDir = path.resolve(this.baseDir)
+    const relPath = path.relative(realBaseDir, absStoragePath)
+    if (!relPath || relPath.startsWith('..') || path.isAbsolute(relPath)) {
+      throw new Error('Invalid path: outside base directory')
+    }
+    return path.join(this.previewsRoot, relPath)
+  }
+
+  private async movePreview(absOld: string, absDest: string): Promise<void> {
+    const oldPreview = this.getPreviewPathForResolvedStoragePath(absOld)
+    const newPreview = this.getPreviewPathForResolvedStoragePath(absDest)
+
+    try {
+      await fs.access(oldPreview)
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') return
+      throw err
+    }
+
+    await fs.mkdir(path.dirname(newPreview), { recursive: true })
+    await fs.rm(newPreview, { recursive: true, force: true })
+    await fs.rename(oldPreview, newPreview)
+  }
+
+  private async copyPreview(absSrc: string, absDest: string): Promise<void> {
+    const srcPreview = this.getPreviewPathForResolvedStoragePath(absSrc)
+    const destPreview = this.getPreviewPathForResolvedStoragePath(absDest)
+
+    let stats
+    try {
+      stats = await fs.stat(srcPreview)
+    } catch (err: any) {
+      if (err?.code === 'ENOENT') return
+      throw err
+    }
+
+    await fs.mkdir(path.dirname(destPreview), { recursive: true })
+    await fs.rm(destPreview, { recursive: true, force: true })
+    if (stats.isDirectory()) {
+      await fs.cp(srcPreview, destPreview, { recursive: true })
+    } else {
+      await fs.copyFile(srcPreview, destPreview)
     }
   }
 

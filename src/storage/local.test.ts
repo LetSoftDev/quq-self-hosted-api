@@ -241,6 +241,33 @@ describe('LocalStorage', () => {
       await storage.rename('/a.txt', '/b.txt')
       await expect(fs.access(path.join(TEST_DIR, 'b (3).txt'))).resolves.toBeUndefined()
     })
+
+    it('should move a file preview when renaming an image', async () => {
+      await fs.writeFile(path.join(TEST_DIR, 'old.png'), 'image')
+      await fs.mkdir(path.join(TEST_DIR, '.previews'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'old.png'), 'preview')
+
+      await storage.rename('/old.png', '/new.png')
+
+      await expect(fs.access(path.join(TEST_DIR, '.previews', 'old.png'))).rejects.toThrow()
+      await expect(fs.readFile(path.join(TEST_DIR, '.previews', 'new.png'), 'utf8')).resolves.toBe('preview')
+      const result = await storage.list('/')
+      expect(result.files.find(file => file.name === 'new.png')?.preview).toBe('/api/preview?path=%2Fnew.png')
+    })
+
+    it('should move nested previews when renaming a folder', async () => {
+      await fs.mkdir(path.join(TEST_DIR, 'oldfolder', 'nested'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, 'oldfolder', 'nested', 'photo.png'), 'image')
+      await fs.mkdir(path.join(TEST_DIR, '.previews', 'oldfolder', 'nested'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'oldfolder', 'nested', 'photo.png'), 'preview')
+
+      await storage.rename('/oldfolder', '/newfolder')
+
+      await expect(fs.access(path.join(TEST_DIR, '.previews', 'oldfolder'))).rejects.toThrow()
+      await expect(fs.readFile(path.join(TEST_DIR, '.previews', 'newfolder', 'nested', 'photo.png'), 'utf8')).resolves.toBe('preview')
+      const result = await storage.list('/newfolder/nested')
+      expect(result.files.find(file => file.name === 'photo.png')?.preview).toBe('/api/preview?path=%2Fnewfolder%2Fnested%2Fphoto.png')
+    })
   })
 
   describe('LocalStorage.search()', () => {
@@ -330,6 +357,47 @@ describe('LocalStorage', () => {
       expect(file2).toBe('content2')
       const file3 = await fs.readFile(path.join(TEST_DIR, 'destparent', 'sourcedir', 'subdir', 'file3.txt'), 'utf-8')
       expect(file3).toBe('content3')
+    })
+
+    it('should copy a file preview so pasted images keep thumbnails', async () => {
+      await fs.writeFile(path.join(TEST_DIR, 'photo.png'), 'image')
+      await fs.mkdir(path.join(TEST_DIR, '.previews'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'photo.png'), 'preview')
+      await fs.mkdir(path.join(TEST_DIR, 'destdir'))
+
+      await storage.copy('/photo.png', '/destdir')
+
+      await expect(fs.readFile(path.join(TEST_DIR, '.previews', 'destdir', 'photo.png'), 'utf8')).resolves.toBe('preview')
+      const result = await storage.list('/destdir')
+      expect(result.files.find(file => file.name === 'photo.png')?.preview).toBe('/api/preview?path=%2Fdestdir%2Fphoto.png')
+    })
+
+    it('should copy a file preview using the resolved conflict name', async () => {
+      await fs.writeFile(path.join(TEST_DIR, 'photo.png'), 'image')
+      await fs.mkdir(path.join(TEST_DIR, '.previews'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'photo.png'), 'preview')
+      await fs.mkdir(path.join(TEST_DIR, 'destdir'))
+      await fs.writeFile(path.join(TEST_DIR, 'destdir', 'photo.png'), 'existing')
+
+      await storage.copy('/photo.png', '/destdir')
+
+      await expect(fs.readFile(path.join(TEST_DIR, '.previews', 'destdir', 'photo (2).png'), 'utf8')).resolves.toBe('preview')
+      const result = await storage.list('/destdir')
+      expect(result.files.find(file => file.name === 'photo (2).png')?.preview).toBe('/api/preview?path=%2Fdestdir%2Fphoto%20(2).png')
+    })
+
+    it('should copy nested previews when copying a directory', async () => {
+      await fs.mkdir(path.join(TEST_DIR, 'sourcedir', 'nested'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, 'sourcedir', 'nested', 'photo.png'), 'image')
+      await fs.mkdir(path.join(TEST_DIR, '.previews', 'sourcedir', 'nested'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'sourcedir', 'nested', 'photo.png'), 'preview')
+      await fs.mkdir(path.join(TEST_DIR, 'destparent'))
+
+      await storage.copy('/sourcedir', '/destparent')
+
+      await expect(fs.readFile(path.join(TEST_DIR, '.previews', 'destparent', 'sourcedir', 'nested', 'photo.png'), 'utf8')).resolves.toBe('preview')
+      const result = await storage.list('/destparent/sourcedir/nested')
+      expect(result.files.find(file => file.name === 'photo.png')?.preview).toBe('/api/preview?path=%2Fdestparent%2Fsourcedir%2Fnested%2Fphoto.png')
     })
   })
 })
