@@ -19,7 +19,7 @@ export const getStorage = () => {
 const upload = multer({
   dest: 'temp/',
   limits: {
-    fileSize: parseInt(process.env.MAX_FILE_SIZE || '52428800')
+    fileSize: parseInt(process.env.MAX_FILE_SIZE || '5368709120')
   }
 })
 

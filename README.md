@@ -34,7 +34,7 @@ The setup wizard asks for the public runtime values, creates storage folders aut
 
 The platform validation URL is built into the self-hosted API. You only configure your project `VALIDATION_SECRET`; there is no backend-pro URL environment variable.
 
-The wizard writes the runtime configuration for you. If your deployment needs it, you can also set the same values manually instead of using the wizard: port, uploads directory, max file size, node environment, and Validation Secret.
+The wizard writes the runtime configuration for you. If your deployment needs it, you can also set the same values manually instead of using the wizard: port, uploads directory, max file size, request timeout, node environment, and Validation Secret. The default upload size limit is 5 GB (`MAX_FILE_SIZE=5368709120`), and the default request timeout is 30 minutes (`REQUEST_TIMEOUT_MS=1800000`) for large uploads.
 
 ## Runtime wizard
 
@@ -65,9 +65,11 @@ The setup wizard can configure nginx after the runtime step:
 
 Choose `yes` at `Configure nginx reverse proxy now?`. The wizard explains the reverse proxy step, checks nginx, can install and start nginx on supported Linux distributions, asks for the public domain, reads the local API port and upload limit from the runtime values, checks whether the domain A record points to the current server, writes an nginx reverse proxy config, and can issue a Let's Encrypt certificate with certbot. Certbot is checked only if you choose HTTPS.
 
-The generated nginx config is prepared for large file uploads: it aligns `client_max_body_size` with `MAX_FILE_SIZE`, disables request buffering for uploads, and sets longer proxy/body timeouts so videos do not fail while the browser is still sending the request.
+The generated nginx config is prepared for large file uploads: it aligns `client_max_body_size` with `MAX_FILE_SIZE`, disables request buffering for uploads, keeps `proxy_connect_timeout` at `60s`, and sets upload proxy/body timeouts to 30 minutes (`1800s`) so videos do not fail while the browser is still sending the request. Nginx also handles CORS for proxied API responses and preflight requests, including nginx-level upload errors, so the browser can show the real HTTP status instead of a generic CORS failure.
 
 If DNS is not linked yet, create an A record from your domain to the server public IP, wait for propagation, then rerun the wizard before issuing the certificate.
+
+If your API domain is behind a CDN, load balancer, or another proxy, make sure that layer also allows large uploads and long-running request bodies. If upload requests fail before they appear in nginx or Docker logs, check that upstream layer first or route upload traffic directly to the self-hosted API.
 
 You can also skip the wizard and configure nginx or another reverse proxy manually. In that case, proxy the public domain to the local API port, keep upload limits aligned with `MAX_FILE_SIZE`, set upload-friendly proxy/body timeouts, and issue the HTTPS certificate through your normal deployment process.
 

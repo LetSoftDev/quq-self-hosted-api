@@ -6,6 +6,10 @@ ENV_FILE="$ROOT_DIR/.env"
 OS_ID="unknown"
 OS_NAME="Unknown OS"
 OS_FAMILY="unknown"
+DEFAULT_REQUEST_TIMEOUT_MS="1800000"
+DEFAULT_MAX_FILE_SIZE_BYTES="5368709120"
+DEFAULT_NGINX_UPLOAD_TIMEOUT="1800s"
+DEFAULT_NGINX_CONNECT_TIMEOUT="60s"
 
 bold() {
   printf '\033[1m%s\033[0m\n' "$1"
@@ -100,7 +104,7 @@ PORT=$port
 UPLOADS_DIR=$uploads_dir
 DATA_DIR=$data_dir
 MAX_FILE_SIZE=$max_file_size
-REQUEST_TIMEOUT_MS=600000
+REQUEST_TIMEOUT_MS=$DEFAULT_REQUEST_TIMEOUT_MS
 NODE_ENV=$node_env
 VALIDATION_SECRET=$validation_secret
 EOF
@@ -139,7 +143,7 @@ nginx_size_from_bytes() {
   local bytes="$1"
 
   if [[ ! "$bytes" =~ ^[0-9]+$ || "$bytes" -le 0 ]]; then
-    printf '50m'
+    printf '5120m'
     return
   fi
 
@@ -315,7 +319,7 @@ print_manual_pm2_commands() {
 print_manual_nginx_commands() {
   local domain="${1:-files.example.com}"
   local local_port="${2:-3000}"
-  local client_max_body_size="${3:-50m}"
+  local client_max_body_size="${3:-5120m}"
 
   printf '\n'
   bold "Manual Nginx setup"
@@ -692,7 +696,7 @@ resolve_domain_ips() {
 ensure_nginx() {
   local domain="${1:-files.example.com}"
   local local_port="${2:-3000}"
-  local client_max_body_size="${3:-50m}"
+  local client_max_body_size="${3:-5120m}"
 
   section "Nginx check"
   info "Nginx exposes the API on your public domain and forwards traffic to the local Node server."
@@ -761,15 +765,28 @@ server {
   server_name $domain;
 
   client_max_body_size $client_max_body_size;
-  client_body_timeout 600s;
+  client_body_timeout $DEFAULT_NGINX_UPLOAD_TIMEOUT;
+  add_header Access-Control-Allow-Origin \$http_origin always;
+  add_header Access-Control-Allow-Credentials "true" always;
+  add_header Access-Control-Allow-Methods "GET, POST, PUT, PATCH, DELETE, OPTIONS" always;
+  add_header Access-Control-Allow-Headers "Content-Type, x-api-key" always;
+  add_header Vary "Origin" always;
 
   location / {
+    if (\$request_method = OPTIONS) {
+      return 204;
+    }
+
     proxy_pass http://127.0.0.1:$local_port;
     proxy_http_version 1.1;
     proxy_request_buffering off;
-    proxy_connect_timeout 60s;
-    proxy_send_timeout 600s;
-    proxy_read_timeout 600s;
+    proxy_connect_timeout $DEFAULT_NGINX_CONNECT_TIMEOUT;
+    proxy_send_timeout $DEFAULT_NGINX_UPLOAD_TIMEOUT;
+    proxy_read_timeout $DEFAULT_NGINX_UPLOAD_TIMEOUT;
+    proxy_hide_header Access-Control-Allow-Origin;
+    proxy_hide_header Access-Control-Allow-Credentials;
+    proxy_hide_header Access-Control-Allow-Methods;
+    proxy_hide_header Access-Control-Allow-Headers;
     proxy_set_header Host \$host;
     proxy_set_header X-Real-IP \$remote_addr;
     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -814,7 +831,7 @@ configure_nginx() {
   local_port="$(read_env_value "PORT" || true)"
   local_port="${local_port:-3000}"
   max_file_size="$(read_env_value "MAX_FILE_SIZE" || true)"
-  max_file_size="${max_file_size:-52428800}"
+  max_file_size="${max_file_size:-$DEFAULT_MAX_FILE_SIZE_BYTES}"
   client_max_body_size="$(nginx_size_from_bytes "$max_file_size")"
 
   note "Using local API port from .env: $local_port"
@@ -925,7 +942,7 @@ main() {
   port="$(prompt "Port" "3000")"
   uploads_dir="$(prompt "Uploads directory" "./uploads")"
   data_dir="./data"
-  max_file_size="$(prompt "Max file size in bytes" "52428800")"
+  max_file_size="$(prompt "Max file size in bytes" "$DEFAULT_MAX_FILE_SIZE_BYTES")"
   node_env="$(prompt "Node environment" "production")"
   printf '\n'
   printf 'Validation Secret is available in the QuqManager dashboard:\n'

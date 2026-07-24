@@ -13,7 +13,7 @@ dotenv.config()
 const app = express()
 const PORT = process.env.PORT || 3000
 const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads'
-const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '600000')
+const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '1800000')
 
 // Middleware
 app.use(cors(corsOptions))
@@ -44,4 +44,5 @@ const server = app.listen(PORT, () => {
 })
 
 server.requestTimeout = REQUEST_TIMEOUT_MS
-server.headersTimeout = REQUEST_TIMEOUT_MS + 5000
+server.timeout = REQUEST_TIMEOUT_MS
+server.headersTimeout = Math.min(60000, REQUEST_TIMEOUT_MS)
