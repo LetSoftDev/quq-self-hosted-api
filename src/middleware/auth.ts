@@ -1,8 +1,16 @@
 // apps/backend-simple/src/middleware/auth.ts
 import { Request, Response, NextFunction } from 'express'
+import {
+  type ProjectImageSettings,
+  normalizeProjectImageSettings,
+  setProjectAuthContext,
+} from '../project-settings'
 
 interface CacheEntry {
   expiresAt: number
+  apiKey: string
+  origin: string
+  settings: ProjectImageSettings
 }
 
 const cache = new Map<string, CacheEntry>()
@@ -12,6 +20,13 @@ const VALIDATION_API_URL = 'https://qapi.letsoft.co'
 /** Exposed for test teardown only — do not use in production code */
 export function clearAuthCache(): void {
   cache.clear()
+}
+
+export function updateCachedProjectImageSettings(apiKey: string, origin: string, settings: ProjectImageSettings): void {
+  const cacheKey = `${apiKey}\x00${origin}`
+  const cached = cache.get(cacheKey)
+  if (!cached) return
+  cache.set(cacheKey, { ...cached, settings })
 }
 
 export function authMiddleware(
@@ -51,6 +66,11 @@ async function onlineAuth(
 
   const cached = cache.get(cacheKey)
   if (cached && cached.expiresAt > Date.now()) {
+    setProjectAuthContext(req, {
+      apiKey: cached.apiKey,
+      origin: cached.origin,
+      settings: cached.settings,
+    })
     next()
     return
   }
@@ -79,13 +99,20 @@ async function onlineAuth(
       return
     }
 
-    const data = await fetchResponse.json() as { valid: boolean }
+    const data = await fetchResponse.json() as { valid: boolean; settings?: Partial<ProjectImageSettings> }
     if (!data.valid) {
       res.status(401).json({ error: 'Invalid API key' })
       return
     }
 
-    cache.set(cacheKey, { expiresAt: Date.now() + CACHE_TTL_MS })
+    const settings = normalizeProjectImageSettings(data.settings)
+    cache.set(cacheKey, {
+      apiKey,
+      origin,
+      settings,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    })
+    setProjectAuthContext(req, { apiKey, origin, settings })
     next()
   } catch {
     res.status(503).json({ error: 'Validation service unavailable' })

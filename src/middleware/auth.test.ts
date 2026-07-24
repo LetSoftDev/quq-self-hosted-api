@@ -46,7 +46,13 @@ describe('authMiddleware — hardcoded backend-pro URL', () => {
     process.env.VALIDATION_SECRET = 'test-secret'
     vi.mocked(fetch).mockResolvedValue({
       status: 200,
-      json: async () => ({ valid: true }),
+      json: async () => ({
+        valid: true,
+        settings: {
+          createImagePreviews: false,
+          optimizeImages: true,
+        },
+      }),
     } as any)
 
     const req = makeReq({ headers: { 'x-api-key': 'qk_abc' } })
@@ -57,6 +63,10 @@ describe('authMiddleware — hardcoded backend-pro URL', () => {
       'https://qapi.letsoft.co/validation/verify',
       expect.any(Object),
     )
+    expect((req as any).quqProject.settings).toEqual({
+      createImagePreviews: false,
+      optimizeImages: true,
+    })
     expect(next).toHaveBeenCalled()
   })
 
@@ -265,7 +275,13 @@ describe('authMiddleware — online mode', () => {
     it('calls backend-pro once and uses cache on second request', async () => {
       vi.mocked(fetch).mockResolvedValue({
         status: 200,
-        json: async () => ({ valid: true }),
+        json: async () => ({
+          valid: true,
+          settings: {
+            createImagePreviews: false,
+            optimizeImages: false,
+          },
+        }),
       } as any)
 
       const req1 = makeReq({ headers: { 'x-api-key': 'qk_cached', 'origin': 'https://app.com' } })
@@ -281,6 +297,10 @@ describe('authMiddleware — online mode', () => {
       expect(fetch).toHaveBeenCalledTimes(1)
       expect(next1).toHaveBeenCalled()
       expect(next2).toHaveBeenCalled()
+      expect((req2 as any).quqProject.settings).toEqual({
+        createImagePreviews: false,
+        optimizeImages: false,
+      })
     })
 
     it('does not cache failed validations', async () => {

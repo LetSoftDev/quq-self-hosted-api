@@ -398,5 +398,34 @@ describe.sequential('Files Router', () => {
       const previewPath = path.join(TEST_DIR, '.previews', 'doc.txt')
       await expect(fs.access(previewPath)).rejects.toThrow()
     })
+
+    it('should not create image previews when project setting is disabled', async () => {
+      ;(fetch as any).mockResolvedValueOnce({
+        status: 200,
+        json: async () => ({
+          valid: true,
+          settings: {
+            createImagePreviews: false,
+            optimizeImages: true,
+          },
+        }),
+      })
+
+      const sharp = (await import('sharp')).default
+      const pngBuffer = await sharp({
+        create: { width: 10, height: 10, channels: 3, background: { r: 100, g: 100, b: 100 } }
+      }).png().toBuffer()
+
+      const res = await request(app)
+        .post('/api/upload')
+        .set('x-api-key', 'preview-off-key')
+        .field('path', '/')
+        .attach('file', pngBuffer, { filename: 'photo.png', contentType: 'image/png' })
+
+      expect(res.status).toBe(200)
+      expect(res.body.preview).toBeUndefined()
+      const previewPath = path.join(TEST_DIR, '.previews', 'photo.png')
+      await expect(fs.access(previewPath)).rejects.toThrow()
+    })
   })
 })

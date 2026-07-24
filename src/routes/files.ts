@@ -1,9 +1,12 @@
 import { Router } from 'express'
 import multer from 'multer'
 import path from 'path'
+import fs from 'fs/promises'
 import { LocalStorage } from '../storage/local'
 import { authMiddleware } from '../middleware/auth'
 import { generateThumbnail, THUMBNAIL_MIME_TYPES } from '../storage/thumbnails'
+import { OPTIMIZABLE_IMAGE_MIME_TYPES, optimizeImageForBrowser } from '../storage/image-optimization'
+import { getProjectImageSettings } from '../project-settings'
 import { getStarStore } from './stars'
 
 const router = Router()
@@ -77,11 +80,25 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
     const targetPath = req.body.path || '/'
     const file = await getStorage().upload(req.file, targetPath)
+    const settings = getProjectImageSettings(req)
+    const storage = getStorage()
+    const uploadedFilePath = path.join(storage.resolvePublic(targetPath), req.file.originalname)
 
-    if (THUMBNAIL_MIME_TYPES.has(req.file.mimetype)) {
-      const storage = getStorage()
+    if (settings.optimizeImages && OPTIMIZABLE_IMAGE_MIME_TYPES.has(req.file.mimetype)) {
+      try {
+        const result = await optimizeImageForBrowser(uploadedFilePath, req.file.mimetype)
+        if (result.optimized) {
+          const stats = await fs.stat(uploadedFilePath)
+          file.size = stats.size
+          file.modified = stats.mtimeMs
+        }
+      } catch (err: unknown) {
+        console.error(`[image-optimization] Failed to optimize ${req.file.originalname}:`, err)
+      }
+    }
+
+    if (settings.createImagePreviews && THUMBNAIL_MIME_TYPES.has(req.file.mimetype)) {
       const previewDir = storage.getPreviewDir(targetPath)
-      const uploadedFilePath = path.join(storage.resolvePublic(targetPath), req.file.originalname)
       const previewPath = path.join(previewDir, req.file.originalname)
       try {
         await generateThumbnail(uploadedFilePath, previewPath)

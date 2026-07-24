@@ -6,6 +6,7 @@ import { activityRouter } from './routes/activity'
 import { starsRouter } from './routes/stars'
 import { trashRouter } from './routes/trash'
 import { storageRouter } from './routes/storage'
+import { settingsRouter } from './routes/settings'
 import { corsOptions, staticCorsHeaders } from './cors'
 
 dotenv.config()
@@ -25,6 +26,7 @@ app.use('/api', activityRouter)
 app.use('/api', starsRouter)
 app.use('/api', trashRouter)
 app.use('/api', storageRouter)
+app.use('/api', settingsRouter)
 
 // Static file serving with CORS.
 // /files is the current QuqManager public file URL prefix.
