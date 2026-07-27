@@ -19,6 +19,7 @@ describe('backend-simple CORS', () => {
     expect(res.header).toHaveBeenCalledWith('Access-Control-Allow-Methods', 'GET, OPTIONS')
     expect(res.header).toHaveBeenCalledWith('Access-Control-Allow-Headers', 'Content-Type, x-api-key')
     expect(res.header).toHaveBeenCalledWith('Vary', 'Origin')
+    expect(res.header).toHaveBeenCalledWith('X-Robots-Tag', 'noindex, nofollow, noarchive')
     expect(next).toHaveBeenCalled()
   })
 

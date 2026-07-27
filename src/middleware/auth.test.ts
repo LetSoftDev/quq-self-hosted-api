@@ -64,6 +64,7 @@ describe('authMiddleware — hardcoded backend-pro URL', () => {
       expect.any(Object),
     )
     expect((req as any).quqProject.settings).toEqual({
+      allowFileIndexing: false,
       canOptimizeImages: false,
       createImagePreviews: false,
       effectiveOptimizeImages: false,
@@ -301,6 +302,7 @@ describe('authMiddleware — online mode', () => {
       expect(next1).toHaveBeenCalled()
       expect(next2).toHaveBeenCalled()
       expect((req2 as any).quqProject.settings).toEqual({
+        allowFileIndexing: false,
         canOptimizeImages: false,
         createImagePreviews: false,
         effectiveOptimizeImages: false,

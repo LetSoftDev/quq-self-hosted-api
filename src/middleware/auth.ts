@@ -4,6 +4,7 @@ import {
   type ProjectImageSettings,
   normalizeProjectImageSettings,
   setProjectAuthContext,
+  setStaticFileIndexingAllowed,
 } from '../project-settings'
 
 interface CacheEntry {
@@ -27,6 +28,7 @@ export function updateCachedProjectImageSettings(apiKey: string, origin: string,
   const cached = cache.get(cacheKey)
   if (!cached) return
   cache.set(cacheKey, { ...cached, settings })
+  setStaticFileIndexingAllowed(settings.allowFileIndexing)
 }
 
 export function authMiddleware(

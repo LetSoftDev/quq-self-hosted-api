@@ -81,9 +81,11 @@ router.patch('/settings', async (req, res) => {
   const patch: Partial<ProjectImageSettings> = {}
   const createImagePreviews = readBoolean(req.body?.createImagePreviews)
   const optimizeImages = readBoolean(req.body?.optimizeImages)
+  const allowFileIndexing = readBoolean(req.body?.allowFileIndexing)
 
   if (createImagePreviews !== undefined) patch.createImagePreviews = createImagePreviews
   if (optimizeImages !== undefined) patch.optimizeImages = optimizeImages
+  if (allowFileIndexing !== undefined) patch.allowFileIndexing = allowFileIndexing
 
   try {
     const settings = await patchProjectSettings(context.apiKey, patch)

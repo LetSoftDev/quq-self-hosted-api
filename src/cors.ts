@@ -1,5 +1,6 @@
 import type { Request, Response, NextFunction } from 'express'
 import type { CorsOptions } from 'cors'
+import { getStaticFileIndexingAllowed, ROBOTS_NO_INDEX_HEADER } from './project-settings'
 
 export const corsOptions: CorsOptions = {
   origin: true,
@@ -15,5 +16,8 @@ export function staticCorsHeaders(req: Request, res: Response, next: NextFunctio
   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS')
   res.header('Access-Control-Allow-Headers', 'Content-Type, x-api-key')
   res.header('Vary', 'Origin')
+  if (!getStaticFileIndexingAllowed()) {
+    res.header('X-Robots-Tag', ROBOTS_NO_INDEX_HEADER)
+  }
   next()
 }

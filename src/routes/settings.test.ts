@@ -43,6 +43,7 @@ describe('Settings Router', () => {
     expect(res.status).toBe(200)
     expect(res.body).toEqual({
       canOptimizeImages: false,
+      allowFileIndexing: false,
       createImagePreviews: false,
       effectiveOptimizeImages: false,
       optimizeImages: true,
@@ -67,17 +68,19 @@ describe('Settings Router', () => {
         json: async () => ({
           createImagePreviews: false,
           optimizeImages: false,
+          allowFileIndexing: true,
         }),
       })
 
     const res = await request(app)
       .patch('/api/settings')
       .set('x-api-key', 'qk_test')
-      .send({ createImagePreviews: false, optimizeImages: false })
+      .send({ createImagePreviews: false, optimizeImages: false, allowFileIndexing: true })
 
     expect(res.status).toBe(200)
     expect(res.body).toEqual({
       canOptimizeImages: false,
+      allowFileIndexing: true,
       createImagePreviews: false,
       effectiveOptimizeImages: false,
       optimizeImages: false,
@@ -91,6 +94,7 @@ describe('Settings Router', () => {
           apiKey: 'qk_test',
           createImagePreviews: false,
           optimizeImages: false,
+          allowFileIndexing: true,
         }),
       }),
     )

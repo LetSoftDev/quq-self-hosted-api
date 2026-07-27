@@ -6,7 +6,7 @@ import { LocalStorage } from '../storage/local'
 import { authMiddleware } from '../middleware/auth'
 import { generateThumbnail, THUMBNAIL_MIME_TYPES } from '../storage/thumbnails'
 import { OPTIMIZABLE_IMAGE_MIME_TYPES, optimizeImageForBrowser } from '../storage/image-optimization'
-import { getProjectImageSettings } from '../project-settings'
+import { getProjectImageSettings, getStaticFileIndexingAllowed, ROBOTS_NO_INDEX_HEADER } from '../project-settings'
 import { getStarStore } from './stars'
 
 const router = Router()
@@ -38,6 +38,9 @@ router.get('/preview', (req, res) => {
     return res.status(400).json({ error: error.message })
   }
 
+  if (!getStaticFileIndexingAllowed()) {
+    res.setHeader('X-Robots-Tag', ROBOTS_NO_INDEX_HEADER)
+  }
   res.setHeader('Content-Type', 'image/jpeg')
   res.sendFile(previewPath, (err) => {
     if (err && !res.headersSent) {
