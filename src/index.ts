@@ -1,50 +1,22 @@
-import express from 'express'
-import cors from 'cors'
-import dotenv from 'dotenv'
-import { filesRouter } from './routes/files'
-import { activityRouter } from './routes/activity'
-import { starsRouter } from './routes/stars'
-import { trashRouter } from './routes/trash'
-import { storageRouter } from './routes/storage'
-import { settingsRouter } from './routes/settings'
-import { corsOptions, staticCorsHeaders } from './cors'
+// First, before any module reads process.env: routes/files.ts reads MAX_FILE_SIZE when it is loaded.
+import 'dotenv/config'
+import { createApp } from './app'
+import { tidyPreviews } from './startup'
 
-dotenv.config()
-
-const app = express()
 const PORT = process.env.PORT || 3000
 const UPLOADS_DIR = process.env.UPLOADS_DIR || './uploads'
 const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '1800000')
 
-// Middleware
-app.use(cors(corsOptions))
-app.use(express.json())
+// Older versions left thumbnails in the public .previews folder: of trashed items, and of deleted
+// ones. Before listening, so the clean-up cannot race a request that moves a file and its thumbnail.
+// It never rejects, so it cannot stop the server from starting.
+void tidyPreviews().then(() => {
+  const server = createApp().listen(PORT, () => {
+    console.log(`Backend running on http://localhost:${PORT}`)
+    console.log(`Storage directory: ${UPLOADS_DIR}`)
+  })
 
-// Routes
-app.use('/api', filesRouter)
-app.use('/api', activityRouter)
-app.use('/api', starsRouter)
-app.use('/api', trashRouter)
-app.use('/api', storageRouter)
-app.use('/api', settingsRouter)
-
-// Static file serving with CORS.
-// /files is the current QuqManager public file URL prefix.
-// /uploads is kept as a legacy alias for projects migrated from the old file manager.
-app.use('/files', staticCorsHeaders, express.static(UPLOADS_DIR))
-app.use('/uploads', staticCorsHeaders, express.static(UPLOADS_DIR))
-
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok' })
+  server.requestTimeout = REQUEST_TIMEOUT_MS
+  server.timeout = REQUEST_TIMEOUT_MS
+  server.headersTimeout = Math.min(60000, REQUEST_TIMEOUT_MS)
 })
-
-// Start server
-const server = app.listen(PORT, () => {
-  console.log(`Backend running on http://localhost:${PORT}`)
-  console.log(`Storage directory: ${UPLOADS_DIR}`)
-})
-
-server.requestTimeout = REQUEST_TIMEOUT_MS
-server.timeout = REQUEST_TIMEOUT_MS
-server.headersTimeout = Math.min(60000, REQUEST_TIMEOUT_MS)

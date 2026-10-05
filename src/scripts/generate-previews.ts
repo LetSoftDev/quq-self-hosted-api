@@ -12,6 +12,7 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { generateThumbnail, THUMBNAIL_MIME_TYPES } from '../storage/thumbnails.js'
+import { walkUploads } from './walk-uploads.js'
 
 const MIME_BY_EXT: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -38,61 +39,39 @@ function parseArgs(): { uploadsDir: string; force: boolean } {
   return { uploadsDir: path.resolve(uploadsDir), force }
 }
 
-async function walk(
-  dir: string,
+async function generatePreview(
+  fullPath: string,
   uploadsDir: string,
   previewsRoot: string,
   force: boolean,
   stats: { generated: number; skipped: number; failed: number }
 ): Promise<void> {
-  let entries: import('fs').Dirent[]
-  try {
-    entries = await fs.readdir(dir, { withFileTypes: true })
-  } catch (err) {
-    console.error(`  [error] Cannot read directory: ${dir}`, err)
-    stats.failed++
-    return
+  const ext = path.extname(fullPath).toLowerCase()
+  const mime = MIME_BY_EXT[ext]
+  if (!mime || !THUMBNAIL_MIME_TYPES.has(mime)) return
+
+  // Mirror the uploads structure inside .previews/
+  const relPath = path.relative(uploadsDir, fullPath)
+  const destPath = path.join(previewsRoot, relPath)
+
+  if (!force) {
+    try {
+      await fs.access(destPath)
+      console.log(`  [skip]  ${relPath}`)
+      stats.skipped++
+      return
+    } catch {
+      // Doesn't exist — generate it
+    }
   }
 
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name)
-
-    if (entry.isDirectory()) {
-      // Skip the .previews directory itself
-      if (entry.name === '.previews') continue
-      await walk(fullPath, uploadsDir, previewsRoot, force, stats)
-      continue
-    }
-
-    if (!entry.isFile()) continue
-
-    const ext = path.extname(entry.name).toLowerCase()
-    const mime = MIME_BY_EXT[ext]
-    if (!mime || !THUMBNAIL_MIME_TYPES.has(mime)) continue
-
-    // Mirror the uploads structure inside .previews/
-    const relPath = path.relative(uploadsDir, fullPath)
-    const destPath = path.join(previewsRoot, relPath)
-
-    if (!force) {
-      try {
-        await fs.access(destPath)
-        console.log(`  [skip]  ${relPath}`)
-        stats.skipped++
-        continue
-      } catch {
-        // Doesn't exist — generate it
-      }
-    }
-
-    try {
-      await generateThumbnail(fullPath, destPath)
-      console.log(`  [ok]    ${relPath}`)
-      stats.generated++
-    } catch (err) {
-      console.error(`  [fail]  ${relPath}`, err)
-      stats.failed++
-    }
+  try {
+    await generateThumbnail(fullPath, destPath)
+    console.log(`  [ok]    ${relPath}`)
+    stats.generated++
+  } catch (err) {
+    console.error(`  [fail]  ${relPath}`, err)
+    stats.failed++
   }
 }
 
@@ -115,7 +94,14 @@ async function main() {
   await fs.mkdir(previewsRoot, { recursive: true })
 
   const stats = { generated: 0, skipped: 0, failed: 0 }
-  await walk(uploadsDir, uploadsDir, previewsRoot, force, stats)
+  await walkUploads(
+    uploadsDir,
+    fullPath => generatePreview(fullPath, uploadsDir, previewsRoot, force, stats),
+    (dir, err) => {
+      console.error(`  [error] Cannot read directory: ${dir}`, err)
+      stats.failed++
+    }
+  )
 
   console.log('')
   console.log(`Done. Generated: ${stats.generated}, Skipped: ${stats.skipped}, Failed: ${stats.failed}`)

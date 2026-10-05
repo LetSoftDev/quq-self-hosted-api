@@ -1,6 +1,9 @@
 services:
   api:
     build: .
+    # The per-address limits trust X-Forwarded-For from a private peer (see "Behind a proxy" in
+    # README.md). If this port is reachable directly, not only through your proxy, publish it on
+    # localhost instead ("127.0.0.1:${PORT:-3000}:3000") or set TRUST_PROXY=false in .env.
     ports:
       - "${PORT:-3000}:3000"
     env_file:

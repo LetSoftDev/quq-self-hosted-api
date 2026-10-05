@@ -5,6 +5,7 @@ import { ActivityStore } from '../storage/activity'
 import { authMiddleware } from '../middleware/auth'
 import type { ActivitySummary, QuqFile } from '../types'
 import { getStorage } from './files'
+import { sendError } from '../http-errors'
 
 const router = Router()
 
@@ -78,16 +79,21 @@ const filterExistingSummary = async (summary: ActivitySummary): Promise<Activity
 router.post('/activity', (req, res) => {
   try {
     const { path: filePath, name, type } = req.body
-    if (!filePath || !name || !type) {
+    if (!filePath || !name || typeof name !== 'string' || !type) {
       return res.status(400).json({ error: 'path, name, and type are required' })
     }
     if (type !== 'file' && type !== 'dir') {
       return res.status(400).json({ error: 'type must be "file" or "dir"' })
     }
+    try {
+      getStorage().resolvePublic(filePath)
+    } catch {
+      return res.status(400).json({ error: 'Invalid path' })
+    }
     getActivityStore().record(filePath, name, type)
     res.status(204).end()
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    sendError(res, error)
   }
 })
 
@@ -96,7 +102,7 @@ router.get('/activity/summary', async (req, res) => {
     const summary = getActivityStore().getSummary()
     res.json(await filterExistingSummary(summary))
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    sendError(res, error)
   }
 })
 

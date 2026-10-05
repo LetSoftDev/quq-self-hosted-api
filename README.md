@@ -13,7 +13,7 @@ Learn more about the <a href="https://quq.letsoft.co/" target="_blank" rel="noop
 - Minimum for a small test server: 1 vCPU and 1 GB RAM.
 - Recommended for production or Docker builds: 2 vCPU and 2 GB RAM or more.
 - Disk size depends on uploaded files. Start with at least 20 GB SSD and grow `UPLOADS_DIR` storage as needed.
-- Node.js 20+ and npm when running with PM2.
+- Node.js 20.9+ and npm when running with PM2.
 - Docker with Docker Compose when running containers.
 - Nginx and Certbot only when exposing the API through HTTPS on your domain.
 
@@ -55,6 +55,8 @@ chmod +x scripts/update.sh
 
 The updater checks that tracked files do not have local changes, fetches and pulls the current git branch with fast-forward only, refreshes npm packages, builds the API, and can restart Docker Compose or PM2. It does not modify `.env`, `uploads`, or `data`.
 
+The first start after this update does tidy the thumbnails inside `uploads/.previews`: it moves the thumbnails of trashed items into the trash and deletes thumbnails whose file no longer exists. On a very large store that check takes a while, and the server starts listening only after it; the log shows `[thumbnail] Checking previews…` meanwhile.
+
 ## Nginx setup
 
 The setup wizard can configure nginx after the runtime step:
@@ -86,6 +88,78 @@ npm run health -- https://files.example.com
 ```
 
 The server is ready when the script prints `Health check passed`.
+
+## Security
+
+**Uploaded files are served as files, not as pages.** Anyone who holds the project's API key can
+upload, so the server does not let an upload run in a visitor's browser:
+
+- HTML, XHTML, SVG, XML and JavaScript files are sent with `Content-Disposition: attachment`: opening
+  a link downloads the file. `<img src>` still shows an SVG and `<script src>` still loads a script.
+- Every file is sent with `X-Content-Type-Options: nosniff`.
+- A folder URL never serves an `index.html`.
+- Paths with a segment that starts with a dot are not served. That covers the internal `.trash` and
+  `.previews` folders: a file moved to the trash is no longer reachable by link. It also covers a
+  folder of your own whose name starts with a dot: it is no longer served by link (it is still
+  listed in the file manager).
+- Thumbnails of trashed and deleted files are no longer public. A thumbnail goes to the trash with
+  its file and comes back when the file is restored; deleting a file or a folder deletes its
+  thumbnails, and uploading over a file replaces or removes its thumbnail. The trash list shows no
+  thumbnails. Thumbnails of items that were already in the trash are hidden on the first start
+  after the update, and orphaned thumbnails (those whose file is no longer stored at the same
+  path) are removed at every start.
+
+Files uploaded before this version are covered too: the headers are set when a file is served.
+
+**Limits.** Per client address and minute; over a limit the API answers `429` with `Retry-After`.
+Behind a CDN or a load balancer in front of your proxy, `TRUST_PROXY` must be the number of proxy
+hops: otherwise all visitors share the CDN's address, and its limits. Set the limits in `.env`; the
+defaults are:
+
+| Variable | Default | Counts |
+| --- | --- | --- |
+| `RATE_LIMIT_API` | `600` | API calls |
+| `RATE_LIMIT_UPLOAD` | `120` | uploads |
+| `RATE_LIMIT_SEARCH` | `60` | searches |
+| `RATE_LIMIT_STORAGE` | `60` | storage usage requests |
+| `RATE_LIMIT_PREVIEW` | `1200` | preview images |
+| `RATE_LIMIT_SETTINGS` | `30` | changes of the project settings (`PATCH /api/settings`) |
+| `VALIDATION_ATTEMPT_LIMIT` | `60` | new key checks: requests with an API key the server has to ask the platform about |
+
+Two limits are not per address but for all addresses together, per minute:
+`VALIDATION_GLOBAL_LIMIT=300` for new key checks and `SETTINGS_UPDATE_GLOBAL_LIMIT=60` for changes
+of the project settings. Over the first, and for 15 seconds after the validation service failed to
+answer, a key the server does not know yet gets `503`; over the second, `PATCH /api/settings` gets
+`503`.
+
+A `503` that means "the validation service is unreachable, slow or held back by these limits" comes
+with `Retry-After`. A `503` comes without it when retrying cannot help: `VALIDATION_SECRET` is not
+set, or the validation service answered a key check with `403` (the key belongs to another project,
+or the secret is wrong).
+
+An address that sends 20 wrong or missing API keys within a minute has its new key checks refused
+for 10 minutes (`KEY_FAILURE_LIMIT=20`, `KEY_FAILURE_WINDOW_SEC=60`, `KEY_FAILURE_BLOCK_SEC=600`).
+A key the validation service answers `403` for counts as a wrong one, although the API answers `503`.
+
+**API key checks.** A refused key is remembered for 60 seconds and a valid one for 15 minutes, so a
+revoked key or a removed domain stops working within 15 minutes while the validation service is
+reachable; if it is not, within 75 minutes. A key the server already knows keeps working for up to
+an hour if the validation service is unreachable, and is never locked out by other clients'
+failures from the same address.
+
+**Behind a proxy.** The client address comes from `X-Forwarded-For` when the request arrives from a
+private address: nginx on the same host or Docker's bridge network, as the setup wizard configures.
+Set `TRUST_PROXY` if your proxy is elsewhere; `TRUST_PROXY=false` if nothing proxies the API.
+With exactly one proxy in front, `TRUST_PROXY=1` is the strictest correct setting: the default also
+trusts any other peer with a private address.
+
+The address limits rely on that header. If the API port is reachable directly, not only through
+your proxy, a client can then claim any address and so get around them. Bind the port to localhost
+(for Docker: publish `127.0.0.1:3000:3000` in `docker-compose.yml`) or set `TRUST_PROXY=false`.
+
+**What the API key is.** The key is visible to every visitor of a page that embeds the file manager,
+and the allowed-domains check relies on the browser's `Origin` header. Treat the key as an identifier,
+not a secret: put the file manager behind your own login if not every visitor may manage files.
 
 ## View logs manually
 

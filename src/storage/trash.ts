@@ -52,6 +52,13 @@ export class TrashStore {
     return { items, total: count }
   }
 
+  /** Every row, oldest first. `list` serves a page of the trash view and stops at 200. */
+  all(): TrashItem[] {
+    return this.db
+      .prepare('SELECT * FROM trash_items ORDER BY deleted_at ASC, rowid ASC')
+      .all() as TrashItem[]
+  }
+
   remove(id: string): void {
     this.db.prepare('DELETE FROM trash_items WHERE id = ?').run(id)
   }

@@ -1,6 +1,52 @@
 import fs from 'fs/promises'
 import path from 'path'
 import { QuqFile, ListResponse } from '../types'
+import { RequestError } from '../http-errors'
+
+/** Internal folders at the storage root. The file API must not see or write them. */
+const RESERVED_ROOT_NAMES = new Set(['.trash', '.previews'])
+
+/**
+ * The name as a case-insensitive or normalising file system (APFS, NTFS) may read it: there
+ * `.TRASH`, `.tra\u017Fh` (long s) and, on Windows, `.trash.` and `.trash ` all open `.trash`.
+ */
+const foldedName = (name: string): string => name.normalize('NFKC').toLowerCase().replace(/[. ]+$/, '')
+
+/** Whether a name at the storage root is one of the internal folders, in any spelling. */
+export const isReservedRootName = (name: string): boolean => RESERVED_ROOT_NAMES.has(foldedName(name))
+
+/**
+ * A path as the client sent it. JSON and `?path[]=a` can deliver a number, an array or an object,
+ * and a NUL byte makes fs throw a TypeError: both are the client's mistake, not a server error.
+ */
+function assertPath(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || value.includes('\0')) throw new RequestError('Invalid path')
+}
+
+/**
+ * A client path, normalised and relative to the storage root. One check for the files and for their
+ * thumbnails: a path that may not name a file may not name a public thumbnail either.
+ */
+function normalizeStoragePath(relativePath: string): string {
+  // Remove leading slash to treat as relative to the root
+  const cleanPath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath
+  const normalized = path.normalize(cleanPath)
+
+  // Check if the cleaned path is absolute (shouldn't happen after removing leading /)
+  if (path.isAbsolute(cleanPath)) {
+    throw new RequestError('absolute paths not allowed')
+  }
+
+  const segments = normalized.split(path.sep)
+  if (segments.some(segment => segment === '..')) {
+    throw new RequestError('path traversal detected')
+  }
+  // Folded, so another spelling of the same folder cannot be used to reach them either.
+  if (isReservedRootName(segments[0])) {
+    throw new RequestError('path not allowed')
+  }
+  return normalized
+}
 
 export class LocalStorage {
   constructor(private baseDir: string) {
@@ -16,6 +62,7 @@ export class LocalStorage {
   }
 
   private resolvePath(relativePath: string): string {
+    assertPath(relativePath)
     // Detect if this looks like an OS absolute path (not a virtual storage path)
     // Allow single '/' as root, but reject paths like '/etc', '/usr', '/var', etc.
     if (relativePath !== '/' && relativePath.startsWith('/') && !relativePath.startsWith('//')) {
@@ -23,30 +70,22 @@ export class LocalStorage {
       // Check if it looks like a Unix system path
       const systemPaths = ['etc/', 'usr/', 'var/', 'tmp/', 'home/', 'root/', 'bin/', 'sbin/', 'lib/', 'opt/', 'proc/', 'sys/', 'dev/']
       if (systemPaths.some(sp => afterSlash.startsWith(sp) || afterSlash === sp.slice(0, -1))) {
-        throw new Error('absolute paths not allowed')
+        throw new RequestError('absolute paths not allowed')
       }
     }
 
-    // Remove leading slash to treat as relative to baseDir
-    const cleanPath = relativePath.startsWith('/') ? relativePath.slice(1) : relativePath
-    const normalized = path.normalize(cleanPath)
-
-    // Check if the cleaned path is absolute (shouldn't happen after removing leading /)
-    if (path.isAbsolute(cleanPath)) {
-      throw new Error('absolute paths not allowed')
-    }
-
-    const segments = normalized.split(path.sep)
-    if (segments.some(segment => segment === '..')) {
-      throw new Error('path traversal detected')
-    }
-
-    const resolved = path.resolve(this.baseDir, normalized)
+    const resolved = path.resolve(this.baseDir, normalizeStoragePath(relativePath))
     const realBaseDir = path.resolve(this.baseDir)
     if (!resolved.startsWith(realBaseDir + path.sep) && resolved !== realBaseDir) {
-      throw new Error('Invalid path: outside base directory')
+      throw new RequestError('Invalid path: outside base directory')
     }
 
+    return resolved
+  }
+
+  private resolveEntry(relativePath: string): string {
+    const resolved = this.resolvePath(relativePath)
+    if (resolved === path.resolve(this.baseDir)) throw new RequestError('cannot modify the storage root')
     return resolved
   }
 
@@ -103,7 +142,7 @@ export class LocalStorage {
           url: `/files${relativePath}`,
           size: entry.isFile() ? stats.size : undefined,
           modified: stats.mtimeMs,
-          mime: entry.isFile() ? this.getMimeType(entry.name) : undefined,
+          mime: entry.isFile() ? this.mimeTypeOf(entry.name) : undefined,
           ...(preview ? { preview } : {})
         } as QuqFile
       })
@@ -163,7 +202,7 @@ export class LocalStorage {
           url: `/files${relativePath}`,
           size: entry.isFile() ? stats.size : undefined,
           modified: stats.mtimeMs,
-          mime: entry.isFile() ? this.getMimeType(entry.name) : undefined,
+          mime: entry.isFile() ? this.mimeTypeOf(entry.name) : undefined,
         } as QuqFile)
       }
       if (entry.isDirectory()) {
@@ -173,23 +212,27 @@ export class LocalStorage {
   }
 
   async upload(file: Express.Multer.File, targetPath: string): Promise<QuqFile> {
-    const targetDir = this.resolvePath(targetPath)
-    await fs.mkdir(targetDir, { recursive: true })
+    assertPath(targetPath)
+    const name = file.originalname
+    if (!name || name === '.' || name === '..' || /[/\\\0]/.test(name)) throw new RequestError('invalid file name')
 
-    const targetFile = path.join(targetDir, file.originalname)
+    const targetDir = this.resolvePath(targetPath)
+    // Through resolvePath as well: at the root the name itself could be a reserved folder.
+    const targetFile = this.resolvePath(path.posix.join(targetPath || '/', name))
+    await fs.mkdir(targetDir, { recursive: true })
     await this.moveUploadedFile(file.path, targetFile)
 
     const stats = await fs.stat(targetFile)
-    const relativePath = path.join(targetPath, file.originalname)
+    const relativePath = path.join(targetPath, name)
 
     return {
-      name: file.originalname,
+      name,
       path: relativePath,
       type: 'file',
       url: `/files${relativePath}`,
       size: stats.size,
       modified: stats.mtimeMs,
-      mime: file.mimetype
+      mime: this.mimeTypeOf(name),
     }
   }
 
@@ -211,8 +254,8 @@ export class LocalStorage {
 
   /** Returns absolute path to the previews directory for a given dir path */
   getPreviewDir(dirPath: string): string {
-    const clean = dirPath.startsWith('/') ? dirPath.slice(1) : dirPath
-    return clean ? path.join(this.previewsRoot, clean) : this.previewsRoot
+    assertPath(dirPath)
+    return path.join(this.previewsRoot, normalizeStoragePath(dirPath))
   }
 
   /** Returns the absolute resolved path for a given relative path */
@@ -222,18 +265,15 @@ export class LocalStorage {
 
   /**
    * Returns the absolute path to the preview file for a given original file path.
-   * Validates the resulting path against path traversal.
+   * Validates the path as a file path is validated: against traversal and the internal folders,
+   * whose "thumbnails" (anything a tool left under .previews/.trash) would otherwise be public.
    * @param originalRelativePath e.g. "/photos/cat.jpg"
    */
   getPreviewPath(originalRelativePath: string): string {
-    const clean = originalRelativePath.startsWith('/') ? originalRelativePath.slice(1) : originalRelativePath
-    const normalized = path.normalize(clean)
-    if (normalized.split(path.sep).some(s => s === '..')) {
-      throw new Error('path traversal detected')
-    }
-    const resolved = path.join(this.previewsRoot, normalized)
+    assertPath(originalRelativePath)
+    const resolved = path.join(this.previewsRoot, normalizeStoragePath(originalRelativePath))
     if (!resolved.startsWith(this.previewsRoot + path.sep)) {
-      throw new Error('Invalid path: outside previews directory')
+      throw new RequestError('Invalid path: outside previews directory')
     }
     return resolved
   }
@@ -244,7 +284,7 @@ export class LocalStorage {
   }
 
   async rename(oldPath: string, newPath: string): Promise<void> {
-    const absOld = this.resolvePath(oldPath)
+    const absOld = this.resolveEntry(oldPath)
     const absNewResolved = this.resolvePath(newPath)
     if (absOld === absNewResolved) return // same path: no-op
     const destDir = path.dirname(absNewResolved)
@@ -277,7 +317,7 @@ export class LocalStorage {
     const realBaseDir = path.resolve(this.baseDir)
     const relPath = path.relative(realBaseDir, absStoragePath)
     if (!relPath || relPath.startsWith('..') || path.isAbsolute(relPath)) {
-      throw new Error('Invalid path: outside base directory')
+      throw new RequestError('Invalid path: outside base directory')
     }
     return path.join(this.previewsRoot, relPath)
   }
@@ -322,29 +362,24 @@ export class LocalStorage {
   async delete(paths: string[]): Promise<void> {
     await Promise.all(
       paths.map(async (filePath) => {
-        const fullPath = this.resolvePath(filePath)
+        const fullPath = this.resolveEntry(filePath)
         const stats = await fs.stat(fullPath)
         if (stats.isDirectory()) {
           await fs.rm(fullPath, { recursive: true })
         } else {
           await fs.unlink(fullPath)
-          // Clean up preview thumbnail if it exists
-          const relPath = path.relative(path.resolve(this.baseDir), fullPath)
-          const previewPath = path.join(this.previewsRoot, relPath)
-          try {
-            await fs.unlink(previewPath)
-          } catch (err: any) {
-            if (err.code !== 'ENOENT') {
-              console.error(`[thumbnail] Failed to delete preview for ${path.basename(fullPath)}:`, err)
-            }
-            // ENOENT = no preview exists, that's fine
-          }
+        }
+        // The thumbnail, or a folder's whole tree of them: /api/preview would go on serving it.
+        try {
+          await fs.rm(this.getPreviewPathForResolvedStoragePath(fullPath), { recursive: true, force: true })
+        } catch (err: any) {
+          console.error(`[thumbnail] Failed to delete preview for ${path.basename(fullPath)}:`, err)
         }
       })
     )
   }
 
-  private getMimeType(filename: string): string {
+  mimeTypeOf(filename: string): string {
     const ext = path.extname(filename).toLowerCase()
     const mimeMap: Record<string, string> = {
       '.jpg': 'image/jpeg',
@@ -352,6 +387,7 @@ export class LocalStorage {
       '.png': 'image/png',
       '.gif': 'image/gif',
       '.webp': 'image/webp',
+      '.avif': 'image/avif',
       '.svg': 'image/svg+xml',
       '.pdf': 'application/pdf',
       '.doc': 'application/msword',
@@ -363,6 +399,7 @@ export class LocalStorage {
       '.json': 'application/json',
       '.xml': 'application/xml',
       '.html': 'text/html',
+      '.htm': 'text/html',
       '.mp4': 'video/mp4',
       '.mov': 'video/quicktime',
       '.avi': 'video/x-msvideo',

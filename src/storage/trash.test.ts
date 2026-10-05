@@ -60,6 +60,22 @@ describe('TrashStore', () => {
     })
   })
 
+  describe('all', () => {
+    it('returns every row, past the cap of list, oldest first', () => {
+      for (let i = 0; i < 205; i++) store.add(`id${i}`, `/f${i}.jpg`, `f${i}.jpg`, 'file')
+
+      const items = store.all()
+
+      expect(items).toHaveLength(205)
+      expect(items[0].id).toBe('id0')
+      expect(items[204].id).toBe('id204')
+    })
+
+    it('returns nothing for an empty trash', () => {
+      expect(store.all()).toEqual([])
+    })
+  })
+
   describe('remove', () => {
     it('deletes the row; getById returns undefined', () => {
       store.add('del', '/d.jpg', 'd.jpg', 'file')

@@ -4,7 +4,7 @@ import { corsOptions, staticCorsHeaders } from './cors'
 describe('backend-simple CORS', () => {
   it('uses dynamic origin so backend-pro validation remains the source of truth', () => {
     expect(corsOptions.origin).toBe(true)
-    expect(corsOptions.credentials).toBe(true)
+    expect(corsOptions.credentials).toBeUndefined()
     expect(corsOptions.allowedHeaders).toEqual(['Content-Type', 'x-api-key'])
   })
 

@@ -2,12 +2,17 @@ import { Router } from 'express'
 import fs from 'fs/promises'
 import path from 'path'
 import { authMiddleware } from '../middleware/auth'
+import { sendError } from '../http-errors'
+import { rateLimit } from '../rate-limit'
 
 const router = Router()
 
+// Every request walks and stats the whole tree.
+const storageLimit = rateLimit('RATE_LIMIT_STORAGE', 60)
+
 router.use(authMiddleware)
 
-router.get('/storage', async (req, res) => {
+router.get('/storage', storageLimit, async (req, res) => {
   try {
     const uploadsDir = path.resolve(process.env.UPLOADS_DIR || './uploads')
     const previewsPrefix = path.join(uploadsDir, '.previews') + path.sep
@@ -48,7 +53,7 @@ router.get('/storage', async (req, res) => {
 
     res.json({ used, total })
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    sendError(res, error)
   }
 })
 

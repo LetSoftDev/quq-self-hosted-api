@@ -4,7 +4,6 @@ import { getStaticFileIndexingAllowed, ROBOTS_NO_INDEX_HEADER } from './project-
 
 export const corsOptions: CorsOptions = {
   origin: true,
-  credentials: true,
   allowedHeaders: ['Content-Type', 'x-api-key'],
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
 }

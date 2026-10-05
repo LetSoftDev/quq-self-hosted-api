@@ -1,6 +1,6 @@
 import fs from 'fs/promises'
 import path from 'path'
-import sharp from 'sharp'
+import sharp, { type Sharp } from 'sharp'
 
 export const OPTIMIZABLE_IMAGE_MIME_TYPES = new Set([
   'image/jpeg',
@@ -15,7 +15,7 @@ export interface ImageOptimizationResult {
   outputSize: number
 }
 
-function withBrowserOptimizationPipeline(sourcePath: string, mime: string): sharp.Sharp | null {
+function withBrowserOptimizationPipeline(sourcePath: string, mime: string): Sharp | null {
   const base = sharp(sourcePath).rotate()
 
   if (mime === 'image/jpeg') {

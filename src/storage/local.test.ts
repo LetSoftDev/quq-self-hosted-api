@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { LocalStorage } from './local'
 import type { QuqFile } from '../types'
+import { RequestError } from '../http-errors'
 import fs from 'fs/promises'
 import path from 'path'
 
@@ -184,6 +185,20 @@ describe('LocalStorage', () => {
       await storage.delete(['/photo.jpg'])
 
       await expect(fs.access(path.join(TEST_DIR, '.previews', 'photo.jpg'))).rejects.toThrow()
+    })
+
+    it('should delete the previews of a deleted folder', async () => {
+      await fs.mkdir(path.join(TEST_DIR, 'album', 'inner'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, 'album', 'inner', 'photo.jpg'), '')
+      await fs.mkdir(path.join(TEST_DIR, '.previews', 'album', 'inner'), { recursive: true })
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'album', 'inner', 'photo.jpg'), '')
+      await fs.writeFile(path.join(TEST_DIR, '.previews', 'other.jpg'), '')
+
+      await storage.delete(['/album'])
+
+      await expect(fs.access(path.join(TEST_DIR, '.previews', 'album'))).rejects.toThrow()
+      // Only its own previews.
+      await expect(fs.access(path.join(TEST_DIR, '.previews', 'other.jpg'))).resolves.toBeUndefined()
     })
 
     it('should succeed when deleting a file that has no preview', async () => {
@@ -398,6 +413,113 @@ describe('LocalStorage', () => {
       await expect(fs.readFile(path.join(TEST_DIR, '.previews', 'destparent', 'sourcedir', 'nested', 'photo.png'), 'utf8')).resolves.toBe('preview')
       const result = await storage.list('/destparent/sourcedir/nested')
       expect(result.files.find(file => file.name === 'photo.png')?.preview).toBe('/api/preview?path=%2Fdestparent%2Fsourcedir%2Fnested%2Fphoto.png')
+    })
+  })
+
+  describe('internal folders and the root', () => {
+    // Its own folder, never temp/ itself: multer writes there and another test counts its files.
+    const UPLOAD_TEMP = path.join(process.cwd(), 'temp', 'test-storage-temp')
+
+    it.each(['/.trash', '/.trash/abc/secret.txt', '.previews', '/.previews/a.jpg', '/.TRASH/x'])(
+      'refuses the reserved path %s',
+      async reserved => {
+        await expect(storage.list(reserved)).rejects.toThrow('path not allowed')
+        await expect(storage.mkdir(reserved)).rejects.toThrow('path not allowed')
+        await expect(storage.copy(reserved, '/')).rejects.toThrow('path not allowed')
+        await expect(storage.rename(reserved, '/out')).rejects.toThrow('path not allowed')
+        await expect(storage.delete([reserved])).rejects.toThrow('path not allowed')
+        expect(() => storage.resolvePublic(reserved)).toThrow('path not allowed')
+      },
+    )
+
+    // What a case-insensitive or normalising file system (APFS, NTFS) opens as the same folder.
+    // Checked on the name alone: the answer must not depend on the disk the tests run on.
+    it.each([
+      ['a compatibility character', '/.tra\u017Fh/abc/secret.txt'],
+      ['a trailing dot', '/.trash./abc/secret.txt'],
+      ['a trailing space', '/.trash /abc/secret.txt'],
+      ['trailing dots and spaces', '/.previews. ./a.jpg'],
+      ['full-width letters', '/.\uFF34\uFF32\uFF21\uFF33\uFF28'],
+    ])('refuses a reserved folder spelled with %s', async (_what, reserved) => {
+      await expect(storage.list(reserved)).rejects.toThrow('path not allowed')
+      await expect(storage.mkdir(reserved)).rejects.toThrow('path not allowed')
+      await expect(storage.delete([reserved])).rejects.toThrow('path not allowed')
+      expect(() => storage.resolvePublic(reserved)).toThrow('path not allowed')
+      await expect(fs.access(path.join(TEST_DIR, '.trash'))).rejects.toThrow()
+    })
+
+    it.each(['/.trashed', '/.trash.old', '/trash', '/.previews2'])('still allows the ordinary name %s', async allowed => {
+      expect(() => storage.resolvePublic(allowed)).not.toThrow()
+    })
+
+    // Thumbnails are public: no path into an internal folder may name one.
+    it.each(['/.trash', '/.trash/abc/a.jpg', '.previews', '/.previews/a.jpg', '/.TRASH/x', '/.tra\u017Fh/a.jpg', '/.previews. ./a.jpg'])(
+      'has no preview path for the reserved path %s',
+      reserved => {
+        expect(() => storage.getPreviewPath(reserved)).toThrow(new RequestError('path not allowed'))
+        expect(() => storage.getPreviewDir(reserved)).toThrow(new RequestError('path not allowed'))
+      },
+    )
+
+    it('keeps the preview paths of ordinary files and folders', () => {
+      const previews = path.join(path.resolve(TEST_DIR), '.previews')
+
+      expect(storage.getPreviewPath('/photos/cat.jpg')).toBe(path.join(previews, 'photos', 'cat.jpg'))
+      expect(storage.getPreviewPath('/projects/.trash/cat.jpg')).toBe(path.join(previews, 'projects', '.trash', 'cat.jpg'))
+      expect(storage.getPreviewDir('/')).toBe(previews)
+      expect(storage.getPreviewDir('')).toBe(previews)
+      expect(storage.getPreviewDir('/photos')).toBe(path.join(previews, 'photos'))
+    })
+
+    // JSON and `?path[]=a` deliver anything; a NUL byte makes fs throw a TypeError.
+    it.each([5, ['a'], { a: 1 }, null, undefined, true, '/a\u0000b'])('refuses %j as a path', async bad => {
+      const invalid = bad as string
+      await fs.mkdir(UPLOAD_TEMP, { recursive: true })
+      const temp = path.join(UPLOAD_TEMP, `upload-${Date.now()}-${Math.random()}`)
+      await fs.writeFile(temp, 'x')
+
+      expect(() => storage.resolvePublic(invalid)).toThrow(new RequestError('Invalid path'))
+      expect(() => storage.getPreviewPath(invalid)).toThrow(new RequestError('Invalid path'))
+      expect(() => storage.getPreviewDir(invalid)).toThrow(new RequestError('Invalid path'))
+      await expect(storage.list(invalid)).rejects.toThrow(new RequestError('Invalid path'))
+      await expect(storage.upload({ path: temp, originalname: 'a.txt', mimetype: 'text/plain' } as any, invalid))
+        .rejects.toThrow(new RequestError('Invalid path'))
+      await fs.rm(UPLOAD_TEMP, { recursive: true, force: true })
+    })
+
+    it('still allows a folder with that name below the root', async () => {
+      await storage.mkdir('/projects/.trash')
+
+      await expect(storage.list('/projects/.trash')).resolves.toMatchObject({ total: 0 })
+    })
+
+    it('refuses to delete or rename the storage root', async () => {
+      await expect(storage.delete(['/'])).rejects.toThrow('cannot modify the storage root')
+      await expect(storage.rename('/', '/x')).rejects.toThrow('cannot modify the storage root')
+    })
+
+    it.each(['.trash', '.previews', '..', '.', '', 'a/b.txt', 'a\\b.txt'])(
+      'refuses the upload name %j',
+      async originalname => {
+        await fs.mkdir(UPLOAD_TEMP, { recursive: true })
+        const temp = path.join(UPLOAD_TEMP, `upload-${Date.now()}-${Math.random()}`)
+        await fs.writeFile(temp, 'x')
+
+        await expect(storage.upload({ path: temp, originalname, mimetype: 'text/plain' } as any, '/'))
+          .rejects.toThrow(/path not allowed|invalid file name/)
+        await fs.rm(UPLOAD_TEMP, { recursive: true, force: true })
+      },
+    )
+
+    it('reports the type by the file name, not by what the client declared', async () => {
+      await fs.mkdir(UPLOAD_TEMP, { recursive: true })
+      const temp = path.join(UPLOAD_TEMP, `upload-${Date.now()}`)
+      await fs.writeFile(temp, '<script>1</script>')
+
+      const file = await storage.upload({ path: temp, originalname: 'page.html', mimetype: 'image/png' } as any, '/')
+
+      expect(file.mime).toBe('text/html')
+      await fs.rm(UPLOAD_TEMP, { recursive: true, force: true })
     })
   })
 })

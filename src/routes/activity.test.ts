@@ -163,4 +163,14 @@ describe.sequential('Activity Router', () => {
       expect(res.status).toBe(401)
     })
   })
+
+  it('refuses to record a path outside the storage', async () => {
+    const res = await request(app)
+      .post('/api/activity')
+      .set('x-api-key', 'test-key')
+      .send({ path: '/../../etc/passwd', name: 'passwd', type: 'file' })
+
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ error: 'Invalid path' })
+  })
 })

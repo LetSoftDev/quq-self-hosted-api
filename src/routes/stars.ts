@@ -3,6 +3,8 @@ import fs from 'fs/promises'
 import path from 'path'
 import { StarStore } from '../storage/stars'
 import { authMiddleware } from '../middleware/auth'
+import { sendError } from '../http-errors'
+import { getStorage } from '../storage/instance'
 
 const router = Router()
 
@@ -34,13 +36,11 @@ router.get('/stars', async (req, res) => {
     const filtered = query ? allItems.filter(item => item.name.toLowerCase().includes(query)) : allItems
     const total = filtered.length
     const items = filtered.slice(offset, offset + limit)
-    const uploadsDir = process.env.UPLOADS_DIR || './uploads'
-    const previewsRoot = path.join(uploadsDir, '.previews')
     const files = await Promise.all(items.map(async item => {
-      const relPath = item.path.startsWith('/') ? item.path.slice(1) : item.path
       let preview: string | undefined
       try {
-        await fs.access(path.join(previewsRoot, relPath))
+        // Validated: a stored path must not be able to probe files outside the previews folder.
+        await fs.access(getStorage().getPreviewPath(item.path))
         preview = `/api/preview?path=${encodeURIComponent(item.path)}`
       } catch { /* no preview exists */ }
       return {
@@ -60,7 +60,7 @@ router.get('/stars', async (req, res) => {
       hasMore: offset + files.length < total,
     })
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    sendError(res, error)
   }
 })
 
@@ -73,10 +73,19 @@ router.post('/stars/toggle', (req, res) => {
     if (type !== 'file' && type !== 'dir') {
       return res.status(400).json({ error: 'type must be "file" or "dir"' })
     }
+    // JSON can deliver an object, an array or a number: SQLite cannot bind the first two.
+    if (typeof filePath !== 'string' || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Invalid request' })
+    }
+    try {
+      getStorage().resolvePublic(filePath)
+    } catch {
+      return res.status(400).json({ error: 'Invalid path' })
+    }
     const starred = getStarStore().toggle(filePath, name, type)
     res.json({ starred })
   } catch (error: any) {
-    res.status(500).json({ error: error.message })
+    sendError(res, error)
   }
 })
 

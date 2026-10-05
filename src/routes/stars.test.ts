@@ -1,17 +1,20 @@
-import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll } from 'vitest'
+import { describe, it, expect, beforeAll, beforeEach, afterEach, afterAll, vi } from 'vitest'
 import express from 'express'
 import request from 'supertest'
-import { starsRouter, resetStarStore } from './stars'
+import { starsRouter, resetStarStore, getStarStore } from './stars'
+import { resetStorage } from '../storage/instance'
 import fs from 'fs/promises'
 import path from 'path'
 
 const TEST_DATA_DIR = path.join(process.cwd(), 'temp', 'test-stars-routes')
+const TEST_UPLOADS_DIR = path.join(process.cwd(), 'temp', 'test-stars-uploads')
 
 describe.sequential('Stars Router', () => {
   let app: express.Application
 
   beforeAll(async () => {
     process.env.DATA_DIR = TEST_DATA_DIR
+    process.env.UPLOADS_DIR = TEST_UPLOADS_DIR
     await fs.mkdir(TEST_DATA_DIR, { recursive: true })
     app = express()
     app.use(express.json())
@@ -20,6 +23,7 @@ describe.sequential('Stars Router', () => {
 
   beforeEach(() => {
     resetStarStore()
+    resetStorage()
   })
 
   afterEach(async () => {
@@ -28,6 +32,7 @@ describe.sequential('Stars Router', () => {
 
   afterAll(async () => {
     await fs.rm(TEST_DATA_DIR, { recursive: true, force: true }).catch(() => {})
+    await fs.rm(TEST_UPLOADS_DIR, { recursive: true, force: true }).catch(() => {})
   })
 
   describe('GET /api/stars', () => {
@@ -131,5 +136,47 @@ describe.sequential('Stars Router', () => {
         .send({ path: '/doc.pdf', name: 'doc.pdf', type: 'file' })
       expect(res.status).toBe(401)
     })
+
+    // JSON can deliver anything; SQLite binds only strings and numbers, and stores the number.
+    it.each([
+      ['name', { path: '/doc.pdf', name: { a: 1 }, type: 'file' }],
+      ['name', { path: '/doc.pdf', name: ['doc.pdf'], type: 'file' }],
+      ['name', { path: '/doc.pdf', name: 5, type: 'file' }],
+      ['name', { path: '/doc.pdf', name: true, type: 'file' }],
+      ['path', { path: { a: 1 }, name: 'doc.pdf', type: 'file' }],
+      ['path', { path: ['/doc.pdf'], name: 'doc.pdf', type: 'file' }],
+      ['path', { path: 5, name: 'doc.pdf', type: 'file' }],
+      ['path', { path: true, name: 'doc.pdf', type: 'file' }],
+    ])('answers 400 when %s is not a string: %j', async (_field, body) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const res = await request(app).post('/api/stars/toggle').set('x-api-key', 'test-key').send(body)
+
+      expect(res.status).toBe(400)
+      expect(res.body).toEqual({ error: 'Invalid request' })
+      expect(log).not.toHaveBeenCalled()
+      expect(getStarStore().list(10, 0).items).toEqual([])
+      log.mockRestore()
+    })
+  })
+
+  it('refuses to star a path outside the storage', async () => {
+    const res = await request(app)
+      .post('/api/stars/toggle')
+      .set('x-api-key', 'test-key')
+      .send({ path: '/../../etc/passwd', name: 'passwd', type: 'file' })
+
+    expect(res.status).toBe(400)
+    expect(res.body).toEqual({ error: 'Invalid path' })
+  })
+
+  it('does not reveal whether a file outside the storage exists', async () => {
+    // A row stored before paths were validated.
+    getStarStore().toggle('/../../../package.json', 'package.json', 'file')
+
+    const res = await request(app).get('/api/stars').set('x-api-key', 'test-key')
+
+    expect(res.status).toBe(200)
+    expect(res.body.files[0].preview).toBeUndefined()
   })
 })
